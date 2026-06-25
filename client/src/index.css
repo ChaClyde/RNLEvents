@@ -1,1 +1,59 @@
-@import "tailwindcss"
+@import "tailwindcss";
+/* @plugin "flowbite/plugin";
+@source "../node_modules/flowbite";
+@custom-variant dark (&:where(.dark, .dark *)); */
+
+/* @theme { */
+/* brand = blue */
+/* --color-brand-softer: var(--color-blue-50);
+  --color-brand-soft: var(--color-blue-100);
+  --color-brand-subtle: var(--color-blue-200);
+  --color-brand: var(--color-blue-600);
+  --color-brand-medium: var(--color-blue-200);
+  --color-brand-strong: var(--color-blue-800); */
+
+/* accent = yellow, for secondary actions / highlights */
+/* --color-accent-softer: var(--color-yellow-50);
+  --color-accent-soft: var(--color-yellow-100);
+  --color-accent-subtle: var(--color-yellow-200);
+  --color-accent: var(--color-yellow-400);
+  --color-accent-medium: var(--color-yellow-300);
+  --color-accent-strong: var(--color-yellow-600); */
+
+/* text */
+/* --color-heading: var(--color-gray-900);
+  --color-body: var(--color-gray-600);
+  --color-body-subtle: var(--color-gray-500); */
+
+/* surfaces (white base) */
+/* --color-neutral-primary-soft: var(--color-white);
+  --color-neutral-primary: var(--color-white);
+  --color-neutral-primary-medium: var(--color-gray-50);
+  --color-neutral-secondary: var(--color-gray-50);
+  --color-neutral-secondary-medium: var(--color-gray-100);
+  --color-neutral-tertiary: var(--color-gray-100);
+  --color-neutral-tertiary-medium: var(--color-gray-200); */
+
+/* borders */
+/* --color-default: var(--color-gray-200);
+  --color-default-medium: var(--color-gray-300);
+} */
+
+/* @layer base {
+  .dark {
+    --color-heading: var(--color-gray-50);
+    --color-body: var(--color-gray-300);
+    --color-body-subtle: var(--color-gray-400);
+
+    --color-neutral-primary-soft: var(--color-gray-900);
+    --color-neutral-primary: var(--color-gray-900);
+    --color-neutral-primary-medium: var(--color-gray-800);
+    --color-neutral-secondary: var(--color-gray-800);
+    --color-neutral-secondary-medium: var(--color-gray-700);
+    --color-neutral-tertiary: var(--color-gray-700);
+    --color-neutral-tertiary-medium: var(--color-gray-600);
+
+    --color-default: var(--color-gray-700);
+    --color-default-medium: var(--color-gray-600);
+  }
+} */
