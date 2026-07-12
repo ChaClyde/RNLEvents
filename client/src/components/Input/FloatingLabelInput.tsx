@@ -47,7 +47,6 @@ const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
             ${inputClassName}`
           }`}
           placeholder=" "
-          required={required}
           autoFocus={autofocus}
           disabled={disabled}
         />
@@ -61,9 +60,12 @@ const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
           }`}
         >
           {label}
+          {required && <span className="text-red-600 ml-1">*</span>}
         </label>
         {errors && errors.length > 0 && (
-          <span className="text-red-600 dark:text-red-500">{errors[0]}</span>
+          <span className="text-red-600 dark:text-red-500 text-xs">
+            {errors[0]}
+          </span>
         )}
       </div>
     </>

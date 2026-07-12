@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import Spinner from "../Spinner/Spinner";
 
 interface SubmitButtonProps {
   label: string;
@@ -12,19 +13,33 @@ const SubmitButton: FC<SubmitButtonProps> = ({
   label,
   newClassName,
   className,
+  loading,
+  loadingLabel,
 }) => {
   return (
     <>
       <button
         type="submit"
-        className={`${
-          newClassName
-            ? `${newClassName} `
-            : `px-4 py-3 rounded-lg bg-green-100 border border-green-400 text-sm font-medium text-green-600 hover:bg-green-200 shadow-lg
-        ${className}`
-        } `}
+        className={`
+            ${
+              newClassName
+                ? newClassName
+                : `px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-400 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 shadow-lg
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                ${className}`
+            }`}
+        disabled={loading}
       >
-        {label}
+        {loading ? (
+          <>
+            <div className="flex gap-1">
+              <div>{<Spinner size="xs" />}</div>
+              {loadingLabel}
+            </div>
+          </>
+        ) : (
+          label
+        )}
       </button>
     </>
   );

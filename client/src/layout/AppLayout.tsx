@@ -13,7 +13,7 @@ const LayoutContent = () => {
       <div>
         <AppHeader />
       </div>
-      <div className="p-20 -ml-14 sm:ml-52">
+      <div className="pt-16 sm:ml-72 p-6 transition-all duration-300">
         <Outlet />
       </div>
     </>

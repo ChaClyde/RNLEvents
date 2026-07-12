@@ -9,6 +9,13 @@ const DeleteRole = () => {
         <div className="mb-4">
           <FloatingLabelInput label="Role Name" type="text" name="role" />
         </div>
+        <div className="mb-4">
+          <FloatingLabelInput
+            label="Role Description"
+            type="text"
+            name="role"
+          />
+        </div>
         <div className="flex justify-end gap-2">
           <BackButton label="Back" path="/roles" />
           <SubmitButton

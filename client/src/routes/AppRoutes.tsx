@@ -6,6 +6,7 @@ import DeleteRolePage from "../pages/Role/DeleteRolePage";
 import DeleteOfficePage from "../pages/Office/DeleteOfficePage";
 import EditOfficePage from "../pages/Office/EditOfficePage";
 import OfficeMainPage from "../pages/Office/OfficeMainPage";
+import UserMainPage from "../pages/User/UserMainPage";
 
 const AppRoutes = () => {
   return (
@@ -19,6 +20,8 @@ const AppRoutes = () => {
           <Route path="/offices" element={<OfficeMainPage />} />
           <Route path="/offices/edit" element={<EditOfficePage />} />
           <Route path="/offices/delete" element={<DeleteOfficePage />} />
+
+          <Route path="/users" element={<UserMainPage />} />
         </Route>
       </Routes>
     </>

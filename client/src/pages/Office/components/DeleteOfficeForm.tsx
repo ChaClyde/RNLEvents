@@ -9,6 +9,13 @@ const DeleteOfficeForm = () => {
         <div className="mb-4">
           <FloatingLabelInput label="Office Name" type="text" name="office" />
         </div>
+        <div className="mb-4">
+          <FloatingLabelInput
+            label="Office Description"
+            type="text"
+            name="office"
+          />
+        </div>
         <div className="flex justify-end gap-2">
           <BackButton label="Back" path="/offices" />
           <SubmitButton
