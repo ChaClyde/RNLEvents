@@ -21,7 +21,7 @@ const Spinner: FC<SpinnerProps> = ({ size }) => {
                     ? "w-10 h-10"
                     : ""
           }
-                text-neutral-tertiary animate-spin fill-brand `}
+          text-gray-300 dark:text-gray-600 animate-spin fill-black dark:fill-white `}
           viewBox="0 0 100 101"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"

@@ -14,12 +14,15 @@ const AppRoutes = () => {
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/roles" element={<RoleMainPage />} />
-          <Route path="/roles/edit" element={<EditRolePage />} />
-          <Route path="/roles/delete" element={<DeleteRolePage />} />
+          <Route path="/roles/edit/:role_id" element={<EditRolePage />} />
+          <Route path="/roles/delete/:role_id" element={<DeleteRolePage />} />
 
           <Route path="/offices" element={<OfficeMainPage />} />
-          <Route path="/offices/edit" element={<EditOfficePage />} />
-          <Route path="/offices/delete" element={<DeleteOfficePage />} />
+          <Route path="/offices/edit/:office_id" element={<EditOfficePage />} />
+          <Route
+            path="/offices/delete/:office_id"
+            element={<DeleteOfficePage />}
+          />
 
           <Route path="/users" element={<UserMainPage />} />
         </Route>

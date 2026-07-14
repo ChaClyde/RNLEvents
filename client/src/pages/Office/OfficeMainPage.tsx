@@ -1,43 +1,43 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import AddOfficeForm from "./components/AddOfficeForm";
 import OfficeList from "./components/OfficeList";
 import ToastMessage from "../../components/ToastMessage/ToastMessage";
 import { useRefresh } from "../../hooks/useRefresh";
+import { useLocation } from "react-router-dom";
+import { useToastMessage } from "../../hooks/useToastMessage";
 
 const OfficeMainPage = () => {
-  const [toastMessage, setToastMessage] = useState("");
-  const [toastMessageIsVisible, setToastMessageIsVisible] = useState(false);
+  const location = useLocation();
 
-  const handleShowToastMessage = (message: string) => {
-    setToastMessage(message);
-    setToastMessageIsVisible(true);
-  };
-
-  const handleCloseToastMessage = () => {
-    setToastMessage("");
-    setToastMessageIsVisible(false);
-  };
-
-  const { refresh, handleRefresh } = useRefresh(false);
+  const { message, isVisible, showToastMessage, closeToastMessage } =
+    useToastMessage("", false);
 
   useEffect(() => {
-    document.title = "Office Main Page";
+    document.title = "Role Main Page";
   }, []);
+
+  useEffect(() => {
+    if (location.state?.message) {
+      showToastMessage(location.state.message);
+      handleRefresh();
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state, showToastMessage]);
+
+  const { refresh, handleRefresh } = useRefresh(false);
 
   return (
     <>
       <ToastMessage
-        message={toastMessage}
-        isVisible={toastMessageIsVisible}
-        onClose={handleCloseToastMessage}
+        message={message}
+        isVisible={isVisible}
+        onClose={closeToastMessage}
       />
 
       <div className="grid gap-4">
         <div className="col-span-2 md:col-span-1">
           <AddOfficeForm
-            onOfficeAdded={(message) => {
-              handleShowToastMessage(message);
-            }}
+            onOfficeAdded={showToastMessage}
             refreshKey={handleRefresh}
           />
         </div>

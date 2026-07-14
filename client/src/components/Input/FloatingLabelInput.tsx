@@ -14,6 +14,7 @@ interface FloatingLabelInputProps {
   autofocus?: boolean;
   disabled?: boolean;
   errors?: string[];
+  readOnly?: boolean;
 }
 
 const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
@@ -30,6 +31,7 @@ const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
   autofocus,
   disabled,
   errors,
+  readOnly,
 }) => {
   return (
     <>
@@ -49,6 +51,7 @@ const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
           placeholder=" "
           autoFocus={autofocus}
           disabled={disabled}
+          readOnly={readOnly}
         />
         <label
           htmlFor={name}
@@ -62,12 +65,12 @@ const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
           {label}
           {required && <span className="text-red-600 ml-1">*</span>}
         </label>
-        {errors && errors.length > 0 && (
-          <span className="text-red-600 dark:text-red-500 text-xs">
-            {errors[0]}
-          </span>
-        )}
       </div>
+      {errors && errors.length > 0 && (
+        <span className="text-red-600 dark:text-red-500 text-xs">
+          {errors[0]}
+        </span>
+      )}
     </>
   );
 };

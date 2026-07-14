@@ -4,14 +4,25 @@ import RoleList from "./components/RoleList";
 import ToastMessage from "../../components/ToastMessage/ToastMessage";
 import { useToastMessage } from "../../hooks/useToastMessage";
 import { useRefresh } from "../../hooks/useRefresh";
+import { useLocation } from "react-router-dom";
 
 const RoleMainPage = () => {
+  const location = useLocation();
+
   const { message, isVisible, showToastMessage, closeToastMessage } =
     useToastMessage("", false);
 
   useEffect(() => {
     document.title = "Role Main Page";
   }, []);
+
+  useEffect(() => {
+    if (location.state?.message) {
+      showToastMessage(location.state.message);
+      handleRefresh();
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state, showToastMessage]);
 
   const { refresh, handleRefresh } = useRefresh(false);
 
