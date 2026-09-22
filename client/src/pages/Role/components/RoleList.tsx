@@ -7,7 +7,7 @@ import {
   TableRow,
 } from "../../../components/Table";
 import { useEffect, useState, type FC } from "react";
-import type { RoleColumns } from "../../../components/Interfaces/RoleColumns";
+import type { RoleColumns } from "../../../interfaces/RoleColumns";
 import RoleService from "../../../services/RoleService";
 import Spinner from "../../../components/Spinner/Spinner";
 
@@ -49,77 +49,100 @@ const RoleList: FC<RoleListProps> = ({ refreshKey }) => {
 
   return (
     <>
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <div className="max-w-full max-h-[calc(100vh-200px)] overflow-x-auto">
+      <div className="overflow-hidden rounded-xl border border-[#0095D9]/20 bg-white shadow-sm">
+        <div className="max-h-[calc(100vh-220px)] overflow-auto">
           <Table>
-            <TableHeader className="border-b border-gray-200 bg-blue-600 sticky top-0 text-xs">
+            <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-[#003B5C] to-[#0095D9] border-b border-[#003B5C]">
               <TableRow>
                 <TableCell
                   isHeader
-                  className="px-5 py-3 font-medium text-center"
+                  className="w-16 px-6 py-4 text-center text-xs font-bold uppercase tracking-wide text-white"
                 >
                   No.
                 </TableCell>
+
                 <TableCell
                   isHeader
-                  className="px-5 py-3 font-medium text-center"
+                  className="px-6 py-4 text-center text-xs font-bold uppercase tracking-wide text-white"
                 >
                   Role Name
                 </TableCell>
+
                 <TableCell
                   isHeader
-                  className="px-5 py-3 font-medium text-start"
+                  className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wide text-white"
                 >
                   Role Description
                 </TableCell>
+
                 <TableCell
                   isHeader
-                  className="px-5 py-3 font-medium text-start"
+                  className="w-32 px-6 py-4 text-center text-xs font-bold uppercase tracking-wide text-white"
                 >
                   Users
                 </TableCell>
+
                 <TableCell
                   isHeader
-                  className="px-5 py-3 font-medium text-center"
+                  className="w-44 px-6 py-4 text-center text-xs font-bold uppercase tracking-wide text-white"
                 >
                   Actions
                 </TableCell>
               </TableRow>
             </TableHeader>
 
-            <TableBody className="divide-y divide-gray-100 text-gray-500 text-sm">
+            <TableBody className="divide-y divide-[#0095D9]/10">
               {loadingRoles ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="px-5 py-4 text-center">
+                  <TableCell colSpan={5} className="py-10 text-center">
                     <Spinner size="md" />
+                  </TableCell>
+                </TableRow>
+              ) : roles.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="py-12 text-center text-gray-500"
+                  >
+                    No roles found.
                   </TableCell>
                 </TableRow>
               ) : (
                 roles.map((role, index) => (
-                  <TableRow key={role.role_id}>
-                    <TableCell className="px-5 py-4 text-center">
+                  <TableRow
+                    key={role.role_id}
+                    className="hover:bg-[#0095D9]/5 transition-colors"
+                  >
+                    <TableCell className="px-6 py-4 text-center font-medium text-gray-600">
                       {index + 1}
                     </TableCell>
-                    <TableCell className="px-5 py-4 text-center">
+
+                    <TableCell className="px-6 py-4 text-center font-semibold text-[#003B5C]">
                       {role.role}
                     </TableCell>
-                    <TableCell className="px-5 py-4 text-start">
+
+                    <TableCell className="px-6 py-4 text-gray-600">
                       {role.description}
                     </TableCell>
-                    <TableCell className="px-5 py-4 text-start">
-                      {role.users_count}
+
+                    <TableCell className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center rounded-full bg-[#0095D9]/10 px-3 py-1 text-sm font-medium text-[#0095D9]">
+                        {role.users_count}
+                      </span>
                     </TableCell>
-                    <TableCell className="px-5 py-4 text-center">
-                      <div className="flex justify-center gap-3">
+
+                    <TableCell className="px-6 py-4">
+                      <div className="flex justify-center gap-2">
                         <Link
                           to={`/roles/edit/${role.role_id}`}
-                          className="rounded-lg bg-blue-500/10 px-3 py-1.5 text-sm font-medium border border-blue-400 text-blue-400 hover:bg-blue-500/20 shadow-lg"
+                          className="rounded-lg border border-[#0095D9]/30 bg-[#0095D9]/10 px-4 py-2 text-sm font-medium text-[#0095D9] transition hover:bg-[#0095D9]/20"
                         >
                           Edit
                         </Link>
+
                         <Link
                           to={`/roles/delete/${role.role_id}`}
-                          className="rounded-lg bg-red-500/10 px-3 py-1.5 text-sm font-medium border border-red-400 text-red-400 hover:bg-red-500/20 shadow-lg"
+                          className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100"
                         >
                           Delete
                         </Link>

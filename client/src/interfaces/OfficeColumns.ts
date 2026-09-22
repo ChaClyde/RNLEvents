@@ -7,3 +7,8 @@ export interface OfficeColumns {
   created_at: string;
   updated_at: string;
 }
+
+export interface OfficeFieldErrors {
+  office?: string[];
+  description?: string[];
+}

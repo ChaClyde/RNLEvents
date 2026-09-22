@@ -2,7 +2,7 @@ import type { ChangeEvent, FC } from "react";
 
 interface FloatingLabelInputProps {
   label: string;
-  type: "text" | "date" | "password";
+  type: "text" | "number" | "date" | "password" | "email" | "time";
   name: string;
   value?: string | any;
   onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
@@ -11,7 +11,7 @@ interface FloatingLabelInputProps {
   newInputClassName?: string;
   inputClassName?: string;
   required?: boolean;
-  autofocus?: boolean;
+  autoFocus?: boolean;
   disabled?: boolean;
   errors?: string[];
   readOnly?: boolean;
@@ -28,7 +28,7 @@ const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
   newInputClassName,
   inputClassName,
   required,
-  autofocus,
+  autoFocus,
   disabled,
   errors,
   readOnly,
@@ -49,7 +49,7 @@ const FloatingLabelInput: FC<FloatingLabelInputProps> = ({
             ${inputClassName}`
           }`}
           placeholder=" "
-          autoFocus={autofocus}
+          autoFocus={autoFocus}
           disabled={disabled}
           readOnly={readOnly}
         />

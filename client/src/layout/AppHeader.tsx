@@ -11,7 +11,7 @@ const AppHeader = () => {
       {isOpen && (
         <div className="fixed inset-0 z-40 blur-lg" onClick={toggleUserMenu} />
       )}
-      <nav className="fixed top-0 z-50 w-full bg-neutral-primary-soft border-b border-default">
+      <nav className="fixed top-0 z-50 w-full bg-neutral-primary-soft border-default">
         <div className="px-3 py-3 lg:px-5 lg:pl-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center justify-start rtl:justify-end">

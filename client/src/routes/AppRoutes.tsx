@@ -7,6 +7,10 @@ import DeleteOfficePage from "../pages/Office/DeleteOfficePage";
 import EditOfficePage from "../pages/Office/EditOfficePage";
 import OfficeMainPage from "../pages/Office/OfficeMainPage";
 import UserMainPage from "../pages/User/UserMainPage";
+import VenueMainPage from "../pages/Venue/VenueMainPage";
+import EventMainPage from "../pages/Event/EventMainPage";
+import VehicleMainPage from "../pages/Vehicle/VehicleMainPage";
+import DriverMainPage from "../pages/Driver/DriverMainPage";
 
 const AppRoutes = () => {
   return (
@@ -25,6 +29,13 @@ const AppRoutes = () => {
           />
 
           <Route path="/users" element={<UserMainPage />} />
+
+          <Route path="/venues" element={<VenueMainPage />} />
+
+          <Route path="/events" element={<EventMainPage />} />
+
+          <Route path="/vehicles" element={<VehicleMainPage />} />
+          <Route path="/drivers" element={<DriverMainPage />} />
         </Route>
       </Routes>
     </>

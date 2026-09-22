@@ -10,7 +10,8 @@ class RoleController extends Controller
 {
     public function loadRoles()
     {
-        $roles = Role::where('tbl_roles.is_deleted', false)
+        $roles = Role::withCount('users')
+            ->where('tbl_roles.is_deleted', false)
             ->get();
 
         return response()->json([
@@ -43,13 +44,12 @@ class RoleController extends Controller
         return response()->json([
             'role' => $role,
         ], 200);
-
     }
 
     public function updateRole(Request $request, Role $role)
     {
         $validated = $request->validate([
-            'role' => ['required', 'string', 'min:3', 'max:30', 'regex:/^[A-Za-z\s]+$/', 'unique:tbl_roles,role'],
+            'role' => ['required', 'string', 'min:3', 'max:30', 'regex:/^[A-Za-z\s]+$/', 'unique:tbl_roles,role,' . $role->role_id . ',role_id'],
             'description' => ['nullable', 'string', 'min:3', 'max:255', 'regex:/^[A-Za-z\s]+$/'],
         ]);
 
@@ -64,9 +64,9 @@ class RoleController extends Controller
         ], 200);
     }
 
-    public function destroyRole (Role $role)
+    public function destroyRole(Role $role)
     {
-        $role ->update([
+        $role->update([
             'is_deleted' => true
         ]);
 

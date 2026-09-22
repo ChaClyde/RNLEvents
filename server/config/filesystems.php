@@ -47,6 +47,30 @@ return [
             'report' => false,
         ],
 
+        'vehicles' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/vehicles'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'profile_photos' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/profile_photos'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'venues' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/venues'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

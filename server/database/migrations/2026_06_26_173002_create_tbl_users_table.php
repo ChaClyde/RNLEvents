@@ -12,33 +12,45 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('tbl_users', function (Blueprint $table) {
+
             $table->id('user_id');
-            $table->string('profile_photo', 255)->nullable();
-            $table->string('first_name', 55);
-            $table->string('middle_name', 55)->nullable();
-            $table->string('last_name', 55);
-            $table->string('suffix_name')->nullable();
+
+            $table->string('profile_photo',255)->nullable();
+
+            $table->string('first_name',55);
+            $table->string('middle_name',55)->nullable();
+            $table->string('last_name',55);
+            $table->string('suffix_name',10)->nullable();
+
             $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+
             $table->string('username')->unique();
             $table->string('password');
 
             $table->unsignedBigInteger('role_id');
             $table->unsignedBigInteger('office_id');
+
+            $table->enum('account_status',['Active','Inactive'])
+                ->default('Active');
+
             $table->timestamp('last_login_at')->nullable();
-            $table->tinyInteger('is_deleted')->default(false);
+
+            $table->boolean('is_deleted')->default(false);
+
             $table->timestamps();
 
             $table->foreign('role_id')
                 ->references('role_id')
                 ->on('tbl_roles')
-                ->onUpdate('cascade')
-                ->onDelete('cascade');
+                ->cascadeOnUpdate()
+                ->cascadeOnDelete();
 
             $table->foreign('office_id')
                 ->references('office_id')
                 ->on('tbl_offices')
-                ->onUpdate('cascade')
-                ->onDelete('cascade');
+                ->cascadeOnUpdate()
+                ->cascadeOnDelete();
         });
     }
 

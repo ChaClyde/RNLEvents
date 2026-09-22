@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Office;
-use Illuminate\Validation\Rule;
 
 class OfficeController extends Controller
 {
     public function loadOffices()
     {
-        $offices = Office::where('tbl_offices.is_deleted', false)
+        $offices = Office::withCount('users')
+            ->where('tbl_offices.is_deleted', false)
             ->get();
 
         return response()->json([
@@ -44,14 +44,13 @@ class OfficeController extends Controller
         return response()->json([
             'office' => $office,
         ], 200);
-
     }
 
     public function updateOffice(Request $request, Office $office)
     {
         $validated = $request->validate([
-            'office' => ['required', 'string', 'min:3', 'max:30', 'regex:/^[A-Za-z\s]+$/', Rule::unique('tbl_offices', 'office')->ignore($office->office_id, 'office_id'),],
-            'description' => ['nullable', 'string', 'min:3', 'max:255', 'regex:/^[A-Za-z\s]+$/',],
+            'office' => ['required', 'string', 'min:3', 'max:30', 'regex:/^[A-Za-z\s]+$/', 'unique:tbl_offices,office,' . $office->office_id . ',office_id'],
+            'description' => ['nullable', 'string', 'min:3', 'max:255', 'regex:/^[A-Za-z\s]+$/'],
         ]);
 
         $office->update([

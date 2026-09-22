@@ -3,6 +3,7 @@ import AppHeader from "./AppHeader";
 import AppSidebar from "./AppSidebar";
 import { SidebarProvider } from "../contexts/SidebarContext";
 import { HeaderProvider } from "../contexts/HeaderContext";
+import { ToastProvider } from "../contexts/ToastContext";
 
 const LayoutContent = () => {
   return (
@@ -22,13 +23,13 @@ const LayoutContent = () => {
 
 const AppLayout = () => {
   return (
-    <>
+    <ToastProvider>
       <HeaderProvider>
         <SidebarProvider>
           <LayoutContent />
         </SidebarProvider>
       </HeaderProvider>
-    </>
+    </ToastProvider>
   );
 };
 
