@@ -1,0 +1,17 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Frontend
+client/node_modules/
+client/dist/
+
+# Backend
+server/vendor/
+server/node_modules/
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
