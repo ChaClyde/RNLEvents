@@ -1,57 +1,48 @@
 import AxiosInstance from "./AxiosInstance";
+import type { OfficePayload } from "../interfaces/OfficeColumns";
 
 const OfficeService = {
-  loadOffices: async () => {
-    try {
-      const response = await AxiosInstance.get("/offices/loadOffices");
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
+  // Load all non-deleted offices
+  loadOffices: () => AxiosInstance.get("/offices/loadOffices"),
 
-  storeOffice: async (data: any) => {
-    try {
-      const response = await AxiosInstance.post("/offices/storeOffice", data);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
+  // Get a specific office
+  getOffice: (office_id: string | number) =>
+    AxiosInstance.get(`/offices/getOffice/${office_id}`),
 
-  getOffice: async (office_id: string | number) => {
-    try {
-      const response = await AxiosInstance.get(
-        `/offices/getOffice/${office_id}`,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
+  // Create an office
+  storeOffice: (data: OfficePayload) =>
+    AxiosInstance.post("/offices/storeOffice", data),
 
-  updateOffice: async (office_id: string | number, data: any) => {
-    try {
-      const response = await AxiosInstance.put(
-        `/offices/updateOffice/${office_id}`,
-        data,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
+  // Update an office
+  updateOffice: (office_id: string | number, data: OfficePayload) =>
+    AxiosInstance.put(`/offices/updateOffice/${office_id}`, data),
 
-  destroyOffice: async (office_id: string | number) => {
-    try {
-      const response = await AxiosInstance.put(
-        `/offices/destroyOffice/${office_id}`,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
+  // Activate office
+  activateOffice: (office_id: string | number) =>
+    AxiosInstance.put(`/offices/activateOffice/${office_id}`),
+
+  // Deactivate office
+  deactivateOffice: (office_id: string | number) =>
+    AxiosInstance.put(`/offices/deactivateOffice/${office_id}`),
+
+  // Move office to Trash
+  destroyOffice: (office_id: string | number) =>
+    AxiosInstance.delete(`/offices/destroyOffice/${office_id}`),
+
+  // ==============================
+  // TRASH BIN
+  // ==============================
+
+  // Load deleted offices
+  loadTrashOffices: () => AxiosInstance.get("/offices/trash"),
+
+  // Restore deleted office
+  restoreOffice: (office_id: string | number) =>
+    AxiosInstance.put(`/offices/restoreOffice/${office_id}`),
+
+  // Permanently delete office
+  forceDeleteOffice: (office_id: string | number) =>
+    AxiosInstance.delete(`/offices/forceDeleteOffice/${office_id}`),
 };
 
 export default OfficeService;

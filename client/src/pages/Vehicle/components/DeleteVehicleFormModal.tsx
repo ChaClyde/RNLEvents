@@ -1,10 +1,17 @@
-import { type FC, type FormEvent, useState } from "react";
+import { type FC, type FormEvent, useEffect, useState } from "react";
+import { Trash2, Truck, Gauge, AlertTriangle, User } from "lucide-react";
+
 import Modal from "../../../components/Modal";
 import VehicleService from "../../../services/VehicleService";
 import CloseButton from "../../../components/Button/CloseButton";
 import SubmitButton from "../../../components/Button/SubmitButton";
-import { Trash2, Truck, Gauge, AlertTriangle } from "lucide-react";
 import type { VehicleColumns } from "../../../interfaces/VehicleColumns";
+import {
+  getVehicleStatusLabel,
+  getVehicleStatusStyle,
+  parseVehicleError,
+} from "../../../interfaces/VehicleHelpers";
+import { VehicleFormError } from "./VehicleFormFields";
 
 interface DeleteVehicleFormModalProps {
   vehicle: VehicleColumns | null;
@@ -14,8 +21,6 @@ interface DeleteVehicleFormModalProps {
   onClose: () => void;
 }
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "";
-
 const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
   vehicle,
   onDeleteVehicle,
@@ -24,22 +29,31 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
   onClose,
 }) => {
   const [loadingDestroy, setLoadingDestroy] = useState(false);
+  const [serverError, setServerError] = useState("");
+
+  useEffect(() => {
+    if (isOpen) setServerError("");
+  }, [isOpen]);
 
   const handleDestroyVehicle = async (e: FormEvent) => {
     e.preventDefault();
     if (!vehicle) return;
+
     try {
       setLoadingDestroy(true);
+      setServerError("");
+
       const res = await VehicleService.destroyVehicle(vehicle.vehicle_id);
+
       if (res.status === 200) {
         onDeleteVehicle(res.data.message);
         refreshKey();
         onClose();
-      } else {
-        console.error("Unexpected error:", res.status);
       }
     } catch (error) {
-      console.error("Delete error:", error);
+      setServerError(
+        parseVehicleError(error, "Failed to delete the vehicle.").message,
+      );
     } finally {
       setLoadingDestroy(false);
     }
@@ -60,19 +74,21 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
               <h1 className="text-2xl font-bold text-gray-900">
                 Delete Vehicle
               </h1>
-              <p className="text-sm text-gray-500 mt-1">
-                This vehicle will no longer be available when scheduling events.
+              <p className="mt-1 text-sm text-gray-500">
+                This vehicle will no longer be available for new bookings.
               </p>
             </div>
           </div>
         </div>
 
+        <VehicleFormError message={serverError} />
+
         {/* Big image + name */}
         <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white">
           <div className="h-64 w-full bg-gray-100">
-            {vehicle.image_path ? (
+            {vehicle.image_url ? (
               <img
-                src={`${backendUrl}/api/vehicles/getVehicleImage/${vehicle.vehicle_id}`}
+                src={vehicle.image_url}
                 alt={vehicle.vehicle_name}
                 className="h-full w-full object-cover"
               />
@@ -83,20 +99,30 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
             )}
           </div>
 
-          <div className="p-6">
-            <h2 className="text-xl font-bold text-gray-900">
-              {vehicle.vehicle_name}
-            </h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Maintenance: {vehicle.vehicle_maintenance ?? "—"}
-            </p>
+          <div className="flex items-start justify-between gap-3 p-6">
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold text-gray-900">
+                {vehicle.vehicle_name}
+              </h2>
+              <p className="mt-1 text-sm tracking-wide text-gray-500">
+                Plate No. {vehicle.plate_number}
+              </p>
+            </div>
+
+            <span
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${getVehicleStatusStyle(
+                vehicle.status,
+              )}`}
+            >
+              {getVehicleStatusLabel(vehicle.status)}
+            </span>
           </div>
         </div>
 
         {/* Details */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-3xl border border-gray-200 bg-white p-5">
-            <div className="mb-4 flex items-center gap-2">
+            <div className="mb-3 flex items-center gap-2">
               <Gauge className="text-[#0095D9]" size={18} />
               <h3 className="font-semibold text-gray-900">Type</h3>
             </div>
@@ -106,29 +132,45 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
           </div>
 
           <div className="rounded-3xl border border-gray-200 bg-white p-5">
-            <div className="mb-4 flex items-center gap-2">
+            <div className="mb-3 flex items-center gap-2">
               <Truck className="text-[#003B5C]" size={18} />
-              <h3 className="font-semibold text-gray-900">Capacity</h3>
+              <h3 className="font-semibold text-gray-900">Seating</h3>
             </div>
             <p className="text-lg font-medium text-gray-900">
-              {vehicle.capacity ?? "—"}
+              {vehicle.capacity} seats
+            </p>
+            {vehicle.seating_notes && (
+              <p className="mt-1 text-xs text-gray-500">
+                {vehicle.seating_notes}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-gray-200 bg-white p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <User className="text-[#0095D9]" size={18} />
+              <h3 className="font-semibold text-gray-900">Person in Charge</h3>
+            </div>
+            <p className="text-lg font-medium text-gray-900">
+              {vehicle.person_in_charge ?? "—"}
             </p>
           </div>
         </div>
 
         {/* Warning */}
         <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
-          <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-500" />
           <p className="text-sm text-red-700">
-            This removes the vehicle from the active list. Any events already
-            using it will keep their record, but it won't be selectable for new
-            events.
+            This moves the vehicle to the Trash Bin. Existing booking records
+            keep their details, but the vehicle won't be selectable for new
+            bookings. You can restore it later.
           </p>
         </div>
 
         {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+        <div className="flex justify-end gap-3 border-t border-gray-100 pt-4">
           {!loadingDestroy && <CloseButton label="Cancel" onClose={onClose} />}
+
           <SubmitButton
             label="Delete Vehicle"
             loading={loadingDestroy}

@@ -201,7 +201,7 @@ const ViewEventFormModal: FC<ViewEventFormModalProps> = ({
               <div>
                 <p className="text-gray-500 text-xs mb-1">Office</p>
                 <p className="text-gray-900 font-medium">
-                  {event.office?.office ?? "—"}
+                  {event.office?.office_name ?? "—"}
                 </p>
               </div>
             </div>

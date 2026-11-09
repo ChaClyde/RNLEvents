@@ -1,10 +1,18 @@
-import { Link } from "react-router-dom";
 import { useHeader } from "../contexts/HeaderContext";
 import { useSidebar } from "../contexts/SidebarContext";
+import { ROLE_LABELS, useAuth } from "../contexts/AuthContext";
+import { RoleSlug } from "../permissions";
 
 const AppHeader = () => {
   const { isOpen, toggleUserMenu } = useHeader();
   const { toggleSidebar } = useSidebar();
+  const { user, logout } = useAuth();
+  const roleSlug = user?.role?.slug as RoleSlug | undefined;
+  const roleLabel = roleSlug ? ROLE_LABELS[roleSlug] : user?.role?.slug;
+
+  const handleLogout = async () => {
+    await logout();
+  };
 
   return (
     <>
@@ -41,14 +49,9 @@ const AppHeader = () => {
                   />
                 </svg>
               </button>
-              <a href="https://flowbite.com" className="flex ms-2 md:me-24">
-                <img
-                  src="https://flowbite.com/docs/images/logo.svg"
-                  className="h-6 me-3"
-                  alt="FlowBite Logo"
-                />
-                <span className="self-center text-lg font-semibold whitespace-nowrap dark:text-white">
-                  Flowbite
+              <a href="/" className="flex ms-2 md:me-24">
+                <span className="self-center text-lg font-semibold whitespace-nowrap text-heading">
+                  FilSched
                 </span>
               </a>
             </div>
@@ -59,19 +62,22 @@ const AppHeader = () => {
                     type="button"
                     onClick={toggleUserMenu}
                     className="flex text-sm bg-gray-800 rounded-full focus:ring-4 focus:ring-gray-300 dark:focus:ring-gray-600"
-                    aria-expanded="false"
+                    aria-expanded={isOpen}
                     data-dropdown-toggle="dropdown-user"
                   >
                     <span className="sr-only">Open user menu</span>
                     <img
                       className="w-8 h-8 rounded-full"
-                      src="https://flowbite.com/docs/images/people/profile-picture-5.jpg"
+                      src={
+                        user?.profile_photo_url ??
+                        "https://flowbite.com/docs/images/people/profile-picture-5.jpg"
+                      }
                       alt="user photo"
                     />
                   </button>
                 </div>
                 <div
-                  className={`absolute right-8 top-9 min-w-50 z-50 ${isOpen ? "block" : "hidden"} bg-neutral-primary-medium border border-default-medium rounded-base shadow-lg w-44`}
+                  className={`absolute right-8 top-9 min-w-56 z-50 ${isOpen ? "block" : "hidden"} bg-neutral-primary-medium border border-default-medium rounded-base shadow-lg w-56`}
                   id="dropdown-user"
                 >
                   <div
@@ -79,21 +85,27 @@ const AppHeader = () => {
                     role="none"
                   >
                     <p className="text-sm font-medium text-heading" role="none">
-                      Neil Sims
+                      {user?.full_name ?? user?.first_name}
                     </p>
                     <p className="text-sm text-body truncate" role="none">
-                      neil.sims@flowbite.com
+                      {user?.email}
                     </p>
+                    {roleLabel && (
+                      <p className="mt-1 text-xs text-body" role="none">
+                        {roleLabel}
+                      </p>
+                    )}
                   </div>
                   <ul className="p-2 text-sm text-body font-medium" role="none">
                     <li>
-                      <Link
-                        to="#"
+                      <button
+                        type="button"
+                        onClick={() => void handleLogout()}
                         className="inline-flex items-center w-full p-2 hover:bg-neutral-tertiary-medium hover:text-heading rounded"
                         role="menuitem"
                       >
                         Sign out
-                      </Link>
+                      </button>
                     </li>
                   </ul>
                 </div>

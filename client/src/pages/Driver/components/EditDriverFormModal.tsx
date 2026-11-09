@@ -1,81 +1,102 @@
 import { useEffect, useState, type FC, type FormEvent } from "react";
+import { Pencil } from "lucide-react";
+
 import Modal from "../../../components/Modal";
-import FloatingLabelInput from "../../../components/Input/FloatingLabelInput";
-import FloatingLabelSelect from "../../../components/Select/FloatingLabelSelect";
 import CloseButton from "../../../components/Button/CloseButton";
 import SubmitButton from "../../../components/Button/SubmitButton";
+import DriverService from "../../../services/DriverService";
 import type {
   DriverColumns,
   DriverFieldErrors,
 } from "../../../interfaces/DriverColumns";
-import { Pencil, ClipboardList } from "lucide-react";
-import DriverService from "../../../services/DriverService";
+import type { VehicleColumns } from "../../../interfaces/VehicleColumns";
+import { parseApiErrors } from "../../../interfaces/ApiErrorHelpers";
+import {
+  buildDriverPayload,
+  driverToForm,
+  emptyDriverForm,
+  validateDriverForm,
+  type DriverFormValues,
+} from "../../../interfaces/DriverHelpers";
+import DriverFormFields, { DriverFormError } from "./DriverFormFields";
 
 interface EditDriverFormModalProps {
   driver: DriverColumns | null;
+  vehicles: VehicleColumns[];
   onDriverUpdated: (message: string) => void;
   refreshKey: () => void;
   isOpen: boolean;
   onClose: () => void;
 }
 
-type DriverStatus = "Available" | "On Leave" | "Sick Leave" | "Unavailable";
-
 const EditDriverFormModal: FC<EditDriverFormModalProps> = ({
   driver,
+  vehicles,
   onDriverUpdated,
   refreshKey,
   isOpen,
   onClose,
 }) => {
   const [loadingUpdate, setLoadingUpdate] = useState(false);
-  const [driverName, setDriverName] = useState("");
-  const [driverStatus, setDriverStatus] = useState<DriverStatus>("Available");
-  const [statusRemarks, setStatusRemarks] = useState("");
+  const [form, setForm] = useState<DriverFormValues>(emptyDriverForm);
   const [errors, setErrors] = useState<DriverFieldErrors>({});
+  const [serverError, setServerError] = useState("");
 
+  // Load the selected driver into the form each time the modal opens
   useEffect(() => {
     if (isOpen && driver) {
-      setDriverName(driver.driver_name);
-      setDriverStatus(driver.driver_status);
-      setStatusRemarks(driver.status_remarks ?? "");
+      setForm(driverToForm(driver, vehicles));
       setErrors({});
+      setServerError("");
     }
-  }, [isOpen, driver]);
+  }, [isOpen, driver, vehicles]);
+
+  const handleChange = <K extends keyof DriverFormValues>(
+    field: K,
+    value: DriverFormValues[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => ({ ...prev, [field]: undefined }));
+  };
 
   const handleUpdateDriver = async (e: FormEvent) => {
     e.preventDefault();
     if (!driver) return;
 
+    setServerError("");
+
+    const validation = validateDriverForm(form);
+
+    if (Object.keys(validation).length > 0) {
+      setErrors(validation);
+      return;
+    }
+
     try {
       setLoadingUpdate(true);
+      setErrors({});
 
-      const payload = {
-        driver_name: driverName,
-        driver_status: driverStatus,
-        status_remarks: statusRemarks || null,
-      };
-
-      const res = await DriverService.updateDriver(driver.driver_id, payload);
+      const res = await DriverService.updateDriver(
+        driver.driver_id,
+        buildDriverPayload(form),
+      );
 
       if (res.status === 200) {
         onDriverUpdated(res.data.message);
         refreshKey();
         onClose();
-      } else {
-        console.error(
-          "Unexpected status error occurred during updating driver:",
-          res.status,
-        );
       }
-    } catch (error: any) {
-      if (error.response?.status === 422) {
-        setErrors(error.response.data.errors);
-      } else {
-        console.error(
-          "Unexpected server error occurred during updating driver:",
+    } catch (error) {
+      const { status, message, fieldErrors } =
+        parseApiErrors<DriverFieldErrors>(
           error,
+          "Failed to update the driver.",
         );
+
+      if (status === 422) {
+        setErrors(fieldErrors);
+      } else {
+        setServerError(message);
       }
     } finally {
       setLoadingUpdate(false);
@@ -98,57 +119,21 @@ const EditDriverFormModal: FC<EditDriverFormModalProps> = ({
             </div>
             <div>
               <h1 className="text-2xl font-bold text-[#003B5C]">Edit Driver</h1>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="mt-1 text-sm text-gray-500">
                 Update this driver's information and availability.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Driver Information */}
-        <div className="rounded-2xl border border-[#0095D9]/20 bg-white p-5">
-          <div className="mb-5 flex items-center gap-2">
-            <ClipboardList size={18} className="text-[#0095D9]" />
-            <h2 className="font-semibold text-[#003B5C]">Driver Information</h2>
-          </div>
+        <DriverFormError message={serverError} />
 
-          <div className="space-y-4">
-            <FloatingLabelInput
-              label="Driver Name"
-              type="text"
-              name="driver_name"
-              value={driverName}
-              onChange={(e) => setDriverName(e.target.value)}
-              errors={errors.driver_name}
-              required
-              autoFocus
-            />
-
-            <FloatingLabelSelect
-              label="Status"
-              name="driver_status"
-              value={driverStatus}
-              onChange={(e) => setDriverStatus(e.target.value as DriverStatus)}
-              errors={errors.driver_status}
-            >
-              <option value="Available">Available</option>
-              <option value="On Leave">On Leave</option>
-              <option value="Sick Leave">Sick Leave</option>
-              <option value="Unavailable">Unavailable</option>
-            </FloatingLabelSelect>
-
-            {driverStatus !== "Available" && (
-              <FloatingLabelInput
-                label="Remarks (reason / notes)"
-                type="text"
-                name="status_remarks"
-                value={statusRemarks}
-                onChange={(e) => setStatusRemarks(e.target.value)}
-                errors={errors.status_remarks}
-              />
-            )}
-          </div>
-        </div>
+        <DriverFormFields
+          values={form}
+          errors={errors}
+          vehicles={vehicles}
+          onChange={handleChange}
+        />
 
         {/* Footer */}
         <div className="flex justify-end gap-3 border-t border-[#0095D9]/10 pt-6">

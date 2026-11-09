@@ -1,249 +1,541 @@
+import { useEffect, useState } from "react";
 import {
-  useEffect,
-  useState,
-  type FC,
-  type FormEvent,
-  type ChangeEvent,
-} from "react";
-import Modal from "../../../components/Modal";
-import FloatingLabelInput from "../../../components/Input/FloatingLabelInput";
-import CloseButton from "../../../components/Button/CloseButton";
-import SubmitButton from "../../../components/Button/SubmitButton";
+  FiX,
+  FiUpload,
+  FiTrash2,
+  FiMapPin,
+  FiInfo,
+  FiImage,
+  FiUser,
+  FiPhone,
+  FiMail,
+  FiClock,
+} from "react-icons/fi";
+
 import VenueService from "../../../services/VenueService";
-import type {
-  VenueColumns,
-  VenueFieldErrors,
-} from "../../../interfaces/VenueColumns";
-import { MapPin, Camera, X, Pencil } from "lucide-react";
+import type { VenueColumns } from "../../../interfaces/VenueColumns";
 
 interface EditVenueFormModalProps {
-  venue: VenueColumns | null;
-  onVenueUpdated: (message: string) => void;
-  refreshKey: () => void;
   isOpen: boolean;
+  venue: VenueColumns | null;
   onClose: () => void;
+  onSuccess: () => void;
+  onNotify: (message: string, isFailed?: boolean) => void;
 }
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "";
+const inputClass =
+  "w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#0095D9] focus:bg-white focus:ring-2 focus:ring-[#0095D9]/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:bg-gray-800";
 
-const EditVenueFormModal: FC<EditVenueFormModalProps> = ({
-  venue,
-  onVenueUpdated,
-  refreshKey,
+const labelClass =
+  "mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300";
+
+const EditVenueFormModal = ({
   isOpen,
+  venue,
   onClose,
-}) => {
-  const [loadingUpdate, setLoadingUpdate] = useState(false);
+  onSuccess,
+  onNotify,
+}: EditVenueFormModalProps) => {
+  const [loading, setLoading] = useState(false);
 
   const [venueName, setVenueName] = useState("");
   const [description, setDescription] = useState("");
   const [capacity, setCapacity] = useState("");
   const [location, setLocation] = useState("");
 
-  const [venueImage, setVenueImage] = useState<File | null>(null);
-  const [venueImagePreview, setVenueImagePreview] = useState<string | null>(
-    null,
+  const [personInCharge, setPersonInCharge] = useState("");
+  const [picContactNumber, setPicContactNumber] = useState("");
+  const [picEmail, setPicEmail] = useState("");
+
+  const [facilities, setFacilities] = useState("");
+  const [overtimeRate, setOvertimeRate] = useState("0");
+  const [overtimePolicy, setOvertimePolicy] = useState("");
+  const [status, setStatus] = useState<"available" | "unavailable">(
+    "available",
   );
+
+  const [image, setImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
 
-  const [errors, setErrors] = useState<VenueFieldErrors>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
-    setVenueImage(file);
-    setVenueImagePreview(file ? URL.createObjectURL(file) : null);
+  useEffect(() => {
+    if (!venue || !isOpen) return;
+
+    setVenueName(venue.venue);
+    setDescription(venue.description ?? "");
+    setCapacity(String(venue.capacity));
+    setLocation(venue.location);
+
+    setPersonInCharge(venue.person_in_charge ?? "");
+    setPicContactNumber(venue.pic_contact_number ?? "");
+    setPicEmail(venue.pic_email ?? "");
+
+    setFacilities((venue.facilities ?? []).join(", "));
+    setOvertimeRate(String(venue.overtime_rate ?? 0));
+    setOvertimePolicy(venue.overtime_policy ?? "");
+    setStatus(venue.status);
+
+    setImage(null);
+    setImagePreview(
+      venue.venue_image
+        ? `${VenueService.getVenueImage(venue.venue_id)}?v=${venue.updated_at}`
+        : null,
+    );
+
+    setRemoveImage(false);
+    setErrors({});
+  }, [venue, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
+
+  const handleImageChange = (file: File | null) => {
+    if (imagePreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreview);
+    }
+
+    setImage(file);
+    setImagePreview(file ? URL.createObjectURL(file) : null);
     setRemoveImage(false);
   };
 
   const handleRemoveImage = () => {
-    setVenueImage(null);
-    setVenueImagePreview(null);
+    if (imagePreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreview);
+    }
+
+    setImage(null);
+    setImagePreview(null);
     setRemoveImage(true);
   };
 
-  const handleUpdateVenue = async (e: FormEvent) => {
+  const handleClose = () => {
+    if (loading) return;
+    onClose();
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
     if (!venue) return;
 
+    setErrors({});
+
+    const clientErrors: Record<string, string> = {};
+
+    if (!venueName.trim()) {
+      clientErrors.venue = "Venue name is required.";
+    }
+
+    if (!capacity || Number(capacity) < 1) {
+      clientErrors.capacity = "Enter a valid capacity.";
+    }
+
+    if (!location.trim()) {
+      clientErrors.location = "Location is required.";
+    }
+
+    if (Object.keys(clientErrors).length > 0) {
+      setErrors(clientErrors);
+      return;
+    }
+
+    const formData = new FormData();
+
+    formData.append("venue", venueName.trim());
+    formData.append("description", description);
+    formData.append("capacity", capacity);
+    formData.append("location", location.trim());
+    formData.append("person_in_charge", personInCharge.trim());
+    formData.append("pic_contact_number", picContactNumber.trim());
+    formData.append("pic_email", picEmail.trim());
+    formData.append("overtime_rate", overtimeRate || "0");
+    formData.append("overtime_policy", overtimePolicy);
+    formData.append("status", status);
+
+    const facilityList = facilities
+      .split(",")
+      .map((f) => f.trim())
+      .filter(Boolean);
+
+    if (facilityList.length > 0) {
+      facilityList.forEach((f) => formData.append("facilities[]", f));
+    } else {
+      // needed so clearing all facilities actually saves (empty string -> null)
+      formData.append("facilities", "");
+    }
+
+    if (image) {
+      formData.append("venue_image", image);
+    }
+
+    if (removeImage) {
+      formData.append("remove_image", "1");
+    }
+
     try {
-      setLoadingUpdate(true);
-      setErrors({});
+      setLoading(true);
 
-      const formData = new FormData();
-      formData.append("venue", venueName);
-      formData.append("description", description);
-      formData.append("capacity", capacity);
-      formData.append("location", location);
+      const response = await VenueService.updateVenue(venue.venue_id, formData);
 
-      if (venueImage) {
-        formData.append("venue_image", venueImage);
-      } else if (removeImage) {
-        formData.append("remove_image", "1");
-      }
-
-      const res = await VenueService.updateVenue(venue.venue_id, formData);
-
-      if (res.status === 200) {
-        onVenueUpdated(res.data.message);
-        refreshKey();
+      if (response.status === 200) {
         onClose();
+        onSuccess();
+        onNotify("Venue updated successfully!");
       }
     } catch (error: any) {
       if (error.response?.status === 422) {
-        setErrors(error.response.data.errors);
+        const validationErrors = error.response.data.errors ?? {};
+        const formattedErrors: Record<string, string> = {};
+
+        Object.entries(validationErrors).forEach(([key, value]) => {
+          formattedErrors[key] = Array.isArray(value)
+            ? String(value[0])
+            : String(value);
+        });
+
+        setErrors(formattedErrors);
       } else {
-        console.error(error);
+        onNotify(
+          error.response?.data?.message ??
+            "Something went wrong while updating the venue.",
+          true,
+        );
       }
     } finally {
-      setLoadingUpdate(false);
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (isOpen && venue) {
-      setVenueName(venue.venue);
-      setDescription(venue.description ?? "");
-      setCapacity(String(venue.capacity));
-      setLocation(venue.location);
-      setVenueImagePreview(
-        venue.venue_image
-          ? `${backendUrl}/api/venues/getVenueImage/${venue.venue_id}`
-          : null,
-      );
-      setVenueImage(null);
-      setRemoveImage(false);
-      setErrors({});
-    }
-  }, [isOpen, venue]);
-
-  if (!venue) return null;
+  if (!isOpen || !venue) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} showCloseButton>
-      <form onSubmit={handleUpdateVenue} className="space-y-6">
-        {/* Header */}
-        <div className="relative overflow-hidden rounded-2xl border border-[#0095D9]/20 bg-[#0095D9]/5 p-6">
-          <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#0095D9]/15 blur-3xl" />
-          <div className="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-[#003B5C]/10 blur-3xl" />
-
-          <div className="relative flex items-center gap-4">
-            <div className="rounded-2xl bg-linear-to-r from-[#003B5C] to-[#0095D9] p-3">
-              <Pencil className="h-6 w-6 text-white" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-5">
+      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-[#003B5C] p-2.5 text-white">
+              <FiMapPin size={22} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-[#003B5C]">Edit Venue</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                Update the venue's photo and details.
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Edit Venue
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Update venue information, status, and its assigned person in
+                charge.
               </p>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={loading}
+            className="rounded-xl p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <FiX size={21} />
+          </button>
         </div>
 
-        {/* Venue Photo — big rectangular holder */}
-        <div>
-          <div className="relative h-64 w-full overflow-hidden rounded-2xl border-2 border-dashed border-[#0095D9]/30 bg-[#0095D9]/5">
-            {venueImagePreview ? (
-              <>
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-6 overflow-y-auto p-5 sm:p-6"
+        >
+          {/* Basic Information */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
+              <FiInfo className="text-[#0095D9]" size={19} />
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                Basic Information
+              </h3>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className={labelClass}>Venue Name *</label>
+                <input
+                  value={venueName}
+                  onChange={(e) => setVenueName(e.target.value)}
+                  maxLength={100}
+                  className={inputClass}
+                />
+                {errors.venue && (
+                  <p className="mt-1 text-xs text-red-500">{errors.venue}</p>
+                )}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>Description</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Enter venue description..."
+                  className={inputClass}
+                />
+                {errors.description && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {errors.description}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>Capacity *</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value)}
+                  className={inputClass}
+                />
+                {errors.capacity && (
+                  <p className="mt-1 text-xs text-red-500">{errors.capacity}</p>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>Location *</label>
+                <input
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  maxLength={150}
+                  className={inputClass}
+                />
+                {errors.location && (
+                  <p className="mt-1 text-xs text-red-500">{errors.location}</p>
+                )}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>
+                  <span className="inline-flex items-center gap-2">
+                    <FiUser className="text-[#0095D9]" />
+                    Person in Charge
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={personInCharge}
+                  onChange={(e) => setPersonInCharge(e.target.value)}
+                  placeholder="Enter the name of the person in charge"
+                  maxLength={150}
+                  className={inputClass}
+                />
+                {errors.person_in_charge && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {errors.person_in_charge}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  <span className="inline-flex items-center gap-2">
+                    <FiPhone className="text-[#0095D9]" />
+                    PIC Contact Number
+                  </span>
+                </label>
+                <input
+                  type="tel"
+                  value={picContactNumber}
+                  onChange={(e) => setPicContactNumber(e.target.value)}
+                  placeholder="e.g. 09123456789"
+                  maxLength={30}
+                  className={inputClass}
+                />
+                {errors.pic_contact_number && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {errors.pic_contact_number}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  <span className="inline-flex items-center gap-2">
+                    <FiMail className="text-[#0095D9]" />
+                    PIC Email Address
+                  </span>
+                </label>
+                <input
+                  type="email"
+                  value={picEmail}
+                  onChange={(e) => setPicEmail(e.target.value)}
+                  placeholder="e.g. person@filamer.edu.ph"
+                  maxLength={255}
+                  className={inputClass}
+                />
+                {errors.pic_email && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {errors.pic_email}
+                  </p>
+                )}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>Facilities</label>
+                <input
+                  value={facilities}
+                  onChange={(e) => setFacilities(e.target.value)}
+                  placeholder="Projector, Air Conditioning, Sound System"
+                  className={inputClass}
+                />
+                <p className="mt-1.5 text-xs text-gray-400">
+                  Separate each facility using a comma.
+                </p>
+                {errors.facilities && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {errors.facilities}
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Overtime & Status */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
+              <FiClock className="text-[#0095D9]" size={19} />
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                Overtime & Status
+              </h3>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelClass}>Overtime Rate (₱)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={overtimeRate}
+                  onChange={(e) => setOvertimeRate(e.target.value)}
+                  className={inputClass}
+                />
+                {errors.overtime_rate && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {errors.overtime_rate}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>Venue Status</label>
+                <select
+                  value={status}
+                  onChange={(e) =>
+                    setStatus(e.target.value as "available" | "unavailable")
+                  }
+                  className={inputClass}
+                >
+                  <option value="available">Available</option>
+                  <option value="unavailable">Unavailable</option>
+                </select>
+                {errors.status && (
+                  <p className="mt-1 text-xs text-red-500">{errors.status}</p>
+                )}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>Overtime Policy</label>
+                <textarea
+                  value={overtimePolicy}
+                  onChange={(e) => setOvertimePolicy(e.target.value)}
+                  rows={2}
+                  placeholder="Enter venue overtime policy..."
+                  className={inputClass}
+                />
+                {errors.overtime_policy && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {errors.overtime_policy}
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Venue Image */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
+              <FiImage className="text-[#0095D9]" size={19} />
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                Venue Image
+              </h3>
+            </div>
+
+            {imagePreview && (
+              <div className="relative overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
                 <img
-                  src={venueImagePreview}
-                  alt="Preview"
-                  className="h-full w-full object-cover"
+                  src={imagePreview}
+                  alt={venueName}
+                  className="h-56 w-full object-cover"
                 />
                 <button
                   type="button"
                   onClick={handleRemoveImage}
-                  className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#0095D9] text-white shadow"
+                  className="absolute right-3 top-3 rounded-lg bg-red-600 p-2 text-white shadow transition hover:bg-red-700"
                 >
-                  <X size={16} />
+                  <FiTrash2 />
                 </button>
-              </>
-            ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-[#0095D9]/60">
-                <MapPin size={40} />
-                <p className="text-sm font-medium">No photo</p>
               </div>
             )}
 
-            <label
-              htmlFor="edit_venue_image"
-              className="absolute bottom-3 right-3 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white border-2 border-[#0095D9] text-[#0095D9] transition-all hover:bg-[#0095D9]/10"
-            >
-              <Camera size={18} />
+            <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 p-5 text-center transition hover:border-[#0095D9] dark:border-gray-700 dark:bg-gray-800/50">
+              <FiUpload className="mb-2 text-2xl text-[#0095D9]" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                {imagePreview ? "Replace venue image" : "Upload venue image"}
+              </span>
+              <span className="mt-1 text-xs text-gray-400">
+                JPG, JPEG, PNG, or WEBP (maximum 5MB)
+              </span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => handleImageChange(e.target.files?.[0] ?? null)}
+              />
             </label>
 
-            <input
-              id="edit_venue_image"
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              className="hidden"
-              onChange={handleImageChange}
-            />
+            {removeImage && (
+              <p className="text-xs text-red-500">
+                The current image will be removed when you save.
+              </p>
+            )}
+
+            {errors.venue_image && (
+              <p className="text-xs text-red-500">{errors.venue_image}</p>
+            )}
+          </section>
+
+          <div className="flex justify-end gap-3 border-t border-gray-200 pt-5 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={loading}
+              className="rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-xl bg-linear-to-r from-[#003B5C] to-[#00679E] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:from-[#00679E] hover:to-[#0095D9] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? "Updating Venue..." : "Save Changes"}
+            </button>
           </div>
-          {errors.venue_image && (
-            <p className="mt-2 text-xs text-red-500">{errors.venue_image[0]}</p>
-          )}
-        </div>
-
-        {/* Venue Information */}
-        <div className="rounded-2xl border border-[#0095D9]/20 bg-white p-5">
-          <div className="mb-5 flex items-center gap-2">
-            <MapPin size={18} className="text-[#0095D9]" />
-            <h2 className="font-semibold text-[#003B5C]">Venue Information</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FloatingLabelInput
-              label="Venue Name"
-              type="text"
-              name="venue"
-              value={venueName}
-              onChange={(e) => setVenueName(e.target.value)}
-              errors={errors.venue}
-              required
-            />
-
-            <FloatingLabelInput
-              label="Location"
-              type="text"
-              name="location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              errors={errors.location}
-              required
-            />
-
-            <FloatingLabelInput
-              label="Capacity"
-              type="number"
-              name="capacity"
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
-              errors={errors.capacity}
-              required
-            />
-
-            <FloatingLabelInput
-              label="Description"
-              type="text"
-              name="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              errors={errors.description}
-            />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-[#0095D9]/10">
-          {!loadingUpdate && <CloseButton label="Close" onClose={onClose} />}
-          <SubmitButton
-            label="Update Venue"
-            loading={loadingUpdate}
-            loadingLabel="Updating Venue..."
-          />
-        </div>
-      </form>
-    </Modal>
+        </form>
+      </div>
+    </div>
   );
 };
 

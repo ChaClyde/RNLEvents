@@ -5,6 +5,7 @@ interface CloseButtonProps {
   onClose: () => void;
   newClassName?: string;
   className?: string;
+  disabled?: boolean;
 }
 
 const CloseButton: FC<CloseButtonProps> = ({
@@ -12,23 +13,21 @@ const CloseButton: FC<CloseButtonProps> = ({
   onClose,
   newClassName,
   className,
+  disabled = false,
 }) => {
   return (
-    <>
-      <button
-        type="submit"
-        className={`
-            ${
-              newClassName
-                ? newClassName
-                : `px-4 py-3 rounded-lg bg-gray-100 border border-gray-400 text-sm font-medium text-gray-600 hover:bg-gray-200 shadow-lg
-                ${className}`
-            }`}
-        onClick={onClose}
-      >
-        {label}
-      </button>
-    </>
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={disabled}
+      className={
+        newClassName
+          ? newClassName
+          : `px-4 py-3 rounded-lg bg-gray-100 border border-gray-400 text-sm font-medium text-gray-600 hover:bg-gray-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${className ?? ""}`
+      }
+    >
+      {label}
+    </button>
   );
 };
 

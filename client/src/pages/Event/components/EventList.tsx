@@ -156,7 +156,7 @@ const EventList: FC<EventListProps> = ({
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-[#003B5C]/10 px-3 py-1 text-[#003B5C]">
                     <Building2 size={12} />
-                    {event.office?.office ?? "—"}
+                    {event.office?.office_name ?? "—"}
                   </span>
                 </div>
 

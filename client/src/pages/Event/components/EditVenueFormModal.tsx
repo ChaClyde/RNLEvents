@@ -413,7 +413,7 @@ const EditEventFormModal: FC<EditEventFormModalProps> = ({
                   <option value="">Select Office</option>
                   {offices.map((office) => (
                     <option key={office.office_id} value={office.office_id}>
-                      {office.office}
+                      {office.office_name}
                     </option>
                   ))}
                 </>

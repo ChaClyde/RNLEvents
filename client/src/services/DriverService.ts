@@ -1,90 +1,72 @@
 import AxiosInstance from "./AxiosInstance";
 
+import type {
+  DriverFilters,
+  DriverFormData,
+  DriverListResponse,
+  DriverMessageResponse,
+  DriverResponse,
+} from "../interfaces/DriverColumns";
+
 const DriverService = {
-  loadDrivers: async () => {
-    try {
-      const response = await AxiosInstance.get("/drivers/loadDrivers");
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // Load all non-deleted drivers.
+  // Pass { available_on: "YYYY-MM-DD" } to get only assignable drivers.
+  loadDrivers: async (filters?: DriverFilters) => {
+    return await AxiosInstance.get<DriverListResponse>("/drivers/loadDrivers", {
+      params: filters,
+    });
   },
 
+  // Get a single driver
   getDriver: async (driver_id: string | number) => {
-    try {
-      const response = await AxiosInstance.get(
-        `/drivers/getDriver/${driver_id}`,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    return await AxiosInstance.get<DriverResponse>(
+      `/drivers/getDriver/${driver_id}`,
+    );
   },
 
-  storeDriver: async (data: Record<string, any>) => {
-    try {
-      const response = await AxiosInstance.post("/drivers/storeDriver", data);
-      return response;
-    } catch (error) {
-      throw error;
-    }
+  // Create a driver
+  storeDriver: async (data: DriverFormData) => {
+    return await AxiosInstance.post<DriverResponse>(
+      "/drivers/storeDriver",
+      data,
+    );
   },
 
+  // Update a driver
   updateDriver: async (
     driver_id: string | number,
-    data: Record<string, any>,
+    data: Partial<DriverFormData>,
   ) => {
-    try {
-      const response = await AxiosInstance.put(
-        `/drivers/updateDriver/${driver_id}`,
-        data,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    return await AxiosInstance.put<DriverResponse>(
+      `/drivers/updateDriver/${driver_id}`,
+      data,
+    );
   },
 
+  // Move a driver to the Trash Bin
   destroyDriver: async (driver_id: string | number) => {
-    try {
-      const response = await AxiosInstance.delete(
-        `/drivers/destroyDriver/${driver_id}`,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    return await AxiosInstance.delete<DriverMessageResponse>(
+      `/drivers/destroyDriver/${driver_id}`,
+    );
   },
 
+  // Load drivers in the Trash Bin
   loadTrashDrivers: async () => {
-    try {
-      const response = await AxiosInstance.get("/drivers/loadTrashDrivers");
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    return await AxiosInstance.get<DriverListResponse>("/drivers/trash");
   },
 
+  // Restore a driver from the Trash Bin
   restoreDriver: async (driver_id: string | number) => {
-    try {
-      const response = await AxiosInstance.put(
-        `/drivers/restoreDriver/${driver_id}`,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    return await AxiosInstance.put<DriverResponse>(
+      `/drivers/restoreDriver/${driver_id}`,
+    );
   },
 
+  // Permanently delete a driver (must be in the Trash Bin)
   forceDeleteDriver: async (driver_id: string | number) => {
-    try {
-      const response = await AxiosInstance.delete(
-        `/drivers/forceDeleteDriver/${driver_id}`,
-      );
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    return await AxiosInstance.delete<DriverMessageResponse>(
+      `/drivers/forceDeleteDriver/${driver_id}`,
+    );
   },
 };
 

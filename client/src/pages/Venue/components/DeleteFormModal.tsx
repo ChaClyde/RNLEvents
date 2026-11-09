@@ -1,138 +1,171 @@
-import { type FC, type FormEvent, useState } from "react";
-import Modal from "../../../components/Modal";
-import type { VenueColumns } from "../../../interfaces/VenueColumns";
+import { useState } from "react";
+import {
+  FiAlertTriangle,
+  FiX,
+  FiMapPin,
+  FiUsers,
+  FiUser,
+  FiPhone,
+  FiMail,
+} from "react-icons/fi";
+
 import VenueService from "../../../services/VenueService";
-import CloseButton from "../../../components/Button/CloseButton";
-import SubmitButton from "../../../components/Button/SubmitButton";
-import { Trash2, MapPin, Users2, AlertTriangle, Building2 } from "lucide-react";
+import type { VenueColumns } from "../../../interfaces/VenueColumns";
 
 interface DeleteVenueFormModalProps {
-  venue: VenueColumns | null;
-  onDeleteVenue: (message: string) => void;
-  refreshKey: () => void;
   isOpen: boolean;
+  venue: VenueColumns | null;
   onClose: () => void;
+  onSuccess: () => void;
+  onNotify: (message: string, isFailed?: boolean) => void;
 }
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "";
-
-const DeleteVenueFormModal: FC<DeleteVenueFormModalProps> = ({
-  venue,
-  onDeleteVenue,
-  refreshKey,
+const DeleteVenueFormModal = ({
   isOpen,
+  venue,
   onClose,
-}) => {
-  const [loadingDestroy, setLoadingDestroy] = useState(false);
+  onSuccess,
+  onNotify,
+}: DeleteVenueFormModalProps) => {
+  const [loading, setLoading] = useState(false);
 
-  const handleDestroyVenue = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!venue) return;
+  const handleDelete = async () => {
+    if (!venue || loading) return;
+
     try {
-      setLoadingDestroy(true);
-      const res = await VenueService.destroyVenue(venue.venue_id);
-      if (res.status === 200) {
-        onDeleteVenue(res.data.message);
-        refreshKey();
+      setLoading(true);
+
+      const response = await VenueService.destroyVenue(venue.venue_id);
+
+      if (response.status === 200 || response.status === 204) {
         onClose();
-      } else {
-        console.error("Unexpected error:", res.status);
+        onSuccess();
+        onNotify("Venue moved to Trash Bin!");
       }
-    } catch (error) {
-      console.error("Delete error:", error);
+    } catch (error: any) {
+      onNotify(
+        error.response?.data?.message ??
+          "Something went wrong while deleting the venue.",
+        true,
+      );
     } finally {
-      setLoadingDestroy(false);
+      setLoading(false);
     }
   };
 
   if (!isOpen || !venue) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} showCloseButton>
-      <form onSubmit={handleDestroyVenue} className="space-y-6">
-        {/* Header */}
-        <div className="relative overflow-hidden rounded-3xl border border-red-200 bg-red-50 p-6">
-          <div className="relative flex items-center gap-4">
-            <div className="rounded-2xl bg-red-500 p-3">
-              <Trash2 className="h-6 w-6 text-white" />
-            </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-5">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+            Delete Venue
+          </h2>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="rounded-xl p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <FiX size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-900/20">
+            <FiAlertTriangle className="mt-0.5 shrink-0 text-xl text-red-600 dark:text-red-400" />
+
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Delete Venue</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                This venue will no longer be available when scheduling events.
+              <p className="font-semibold text-red-700 dark:text-red-400">
+                Are you sure you want to delete this venue?
+              </p>
+              <p className="mt-1 text-sm text-red-600 dark:text-red-300">
+                This venue will be moved to the Trash Bin. You can restore it
+                later if needed.
               </p>
             </div>
           </div>
-        </div>
 
-        {/* Big image + name */}
-        <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white">
-          <div className="h-64 w-full bg-gray-100">
-            {venue.venue_image ? (
+          <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+            {venue.venue_image && (
               <img
-                src={`${backendUrl}/api/venues/getVenueImage/${venue.venue_id}`}
+                src={VenueService.getVenueImage(venue.venue_id)}
                 alt={venue.venue}
-                className="h-full w-full object-cover"
+                className="h-40 w-full object-cover"
               />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-300">
-                <Building2 size={48} />
+            )}
+
+            <div className="space-y-3 p-4">
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-white">
+                  {venue.venue}
+                </h3>
+                {venue.description && (
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {venue.description}
+                  </p>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="p-6">
-            <h2 className="text-xl font-bold text-gray-900">{venue.venue}</h2>
-            {venue.description && (
-              <p className="mt-2 text-sm text-gray-500">{venue.description}</p>
-            )}
-          </div>
-        </div>
+              <div className="space-y-2 border-t border-gray-100 pt-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300">
+                <p className="flex items-center gap-2">
+                  <FiMapPin className="shrink-0 text-[#0095D9]" />
+                  {venue.location}
+                </p>
 
-        {/* Details */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-3xl border border-gray-200 bg-white p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Users2 className="text-[#0095D9]" size={18} />
-              <h3 className="font-semibold text-gray-900">Capacity</h3>
+                <p className="flex items-center gap-2">
+                  <FiUsers className="shrink-0 text-[#0095D9]" />
+                  {venue.capacity} persons
+                </p>
+
+                {venue.person_in_charge && (
+                  <p className="flex items-center gap-2">
+                    <FiUser className="shrink-0 text-[#0095D9]" />
+                    {venue.person_in_charge}
+                  </p>
+                )}
+
+                {venue.pic_contact_number && (
+                  <p className="flex items-center gap-2">
+                    <FiPhone className="shrink-0 text-[#0095D9]" />
+                    {venue.pic_contact_number}
+                  </p>
+                )}
+
+                {venue.pic_email && (
+                  <p className="flex items-center gap-2 break-all">
+                    <FiMail className="shrink-0 text-[#0095D9]" />
+                    {venue.pic_email}
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="text-2xl font-bold text-[#003B5C]">
-              {venue.capacity}
-            </p>
           </div>
 
-          <div className="rounded-3xl border border-gray-200 bg-white p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <MapPin className="text-[#003B5C]" size={18} />
-              <h3 className="font-semibold text-gray-900">Location</h3>
-            </div>
-            <p className="text-lg font-medium text-gray-900">
-              {venue.location}
-            </p>
+          <div className="flex justify-end gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={loading}
+              className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? "Moving..." : "Move to Trash"}
+            </button>
           </div>
         </div>
-
-        {/* Warning */}
-        <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
-          <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
-          <p className="text-sm text-red-700">
-            This removes the venue from the active list. Any events already
-            scheduled here will keep their record of it, but it won't be
-            selectable for new events.
-          </p>
-        </div>
-
-        {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-          {!loadingDestroy && <CloseButton label="Cancel" onClose={onClose} />}
-          <SubmitButton
-            label="Delete Venue"
-            loading={loadingDestroy}
-            loadingLabel="Deleting..."
-          />
-        </div>
-      </form>
-    </Modal>
+      </div>
+    </div>
   );
 };
 

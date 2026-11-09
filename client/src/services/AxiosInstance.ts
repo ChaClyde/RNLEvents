@@ -1,19 +1,45 @@
 import axios from "axios";
 
+const backendOrigin = (import.meta.env.VITE_BACKEND_URL ?? "").replace(
+  /\/$/,
+  "",
+);
+
 const AxiosInstance = axios.create({
-  baseURL: "http://127.0.0.1:8000/api",
+  baseURL: backendOrigin ? `${backendOrigin}/api` : "/api",
+  withCredentials: true,
+  withXSRFToken: true,
+  headers: {
+    Accept: "application/json",
+    "X-Requested-With": "XMLHttpRequest",
+  },
 });
 
-AxiosInstance.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+type UnauthorizedHandler = () => void;
 
-  if (token) {
-    config.headers["Authorization"] = `Bearer ${token}`;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+let handlingUnauthorized = false;
+
+export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null) => {
+  unauthorizedHandler = handler;
+};
+
+const isAuthHandshake = (url?: string) => {
+  if (!url) {
+    return false;
   }
 
+  return (
+    url.includes("/auth/login") ||
+    url.includes("/auth/me") ||
+    url.includes("/sanctum/csrf-cookie")
+  );
+};
+
+AxiosInstance.interceptors.request.use((config) => {
   if (config.data instanceof FormData) {
-    config.headers["Content-Type"] = "multipart/form-data";
-  } else {
+    delete config.headers["Content-Type"];
+  } else if (config.data !== undefined && config.method !== "get") {
     config.headers["Content-Type"] = "application/json";
   }
 
@@ -21,15 +47,24 @@ AxiosInstance.interceptors.request.use((config) => {
 });
 
 AxiosInstance.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (error) => {
-    if (error.response?.status !== 422) {
+    const status = error.response?.status;
+    const url = String(error.config?.url ?? "");
+
+    if (status === 401 && !isAuthHandshake(url) && !handlingUnauthorized) {
+      handlingUnauthorized = true;
+      unauthorizedHandler?.();
+      handlingUnauthorized = false;
+    }
+
+    if (status !== 401 && status !== 403 && status !== 422) {
       console.error("Unexpected response error: ", error);
     }
+
     return Promise.reject(error);
   },
 );
 
+export { backendOrigin };
 export default AxiosInstance;
