@@ -6,27 +6,40 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('tbl_roles', function (Blueprint $table) {
             $table->id('role_id');
-            $table->string('role')->unique();
-            $table->string('description')->nullable();
-            $table->tinyInteger('is_deleted')->default(false);
+
+            // Role Information
+            $table->string('name', 100)->unique();
+            $table->string('slug', 100)->unique();
+            $table->text('description')->nullable();
+
+            // Status
+            $table->enum('status', ['active', 'inactive'])
+                ->default('active');
+
+            // System Role Protection
+            $table->boolean('is_system_role')
+                ->default(false);
+
+            // Timestamps
             $table->timestamps();
+
+            // Soft Delete
+            $table->boolean('is_deleted')
+                ->default(false);
+
+            // Indexes
+            $table->index('status');
+            $table->index('is_deleted');
+            $table->index('is_system_role');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::disableForeignKeyConstraints();
         Schema::dropIfExists('tbl_roles');
-        Schema::enableForeignKeyConstraints();
     }
 };

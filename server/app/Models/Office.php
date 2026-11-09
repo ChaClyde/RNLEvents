@@ -2,21 +2,24 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Office extends Model
 {
-    use HasFactory, Notifiable;
-
     protected $table = 'tbl_offices';
+
     protected $primaryKey = 'office_id';
 
     protected $fillable = [
-        'office',
+        'office_code',
+        'office_name',
+        'office_type',
         'description',
+        'contact_email',
+        'contact_number',
+        'location',
+        'status',
         'is_deleted',
     ];
 
@@ -24,8 +27,31 @@ class Office extends Model
         'is_deleted' => 'boolean',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
+
     public function users(): HasMany
     {
-        return $this->hasMany(User::class, 'office_id', 'office_id');
+        return $this->hasMany(User::class, 'office_id', 'office_id')
+            ->where('is_deleted', false);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Query Scopes
+    |--------------------------------------------------------------------------
+    */
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_deleted', false);
+    }
+
+    public function scopeOnlyDeleted($query)
+    {
+        return $query->where('is_deleted', true);
     }
 }

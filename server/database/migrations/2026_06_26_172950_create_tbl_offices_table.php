@@ -6,27 +6,42 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('tbl_offices', function (Blueprint $table) {
             $table->id('office_id');
-            $table->string('office');
-            $table->string('description');
-            $table->tinyInteger('is_deleted')->default(false);
+
+            // Office identification
+            $table->string('office_code', 50)->unique();
+            $table->string('office_name', 150);
+
+            // Office classification
+            $table->string('office_type', 100)->nullable();
+
+            // Office information
+            $table->text('description')->nullable();
+            $table->string('contact_email', 150)->nullable();
+            $table->string('contact_number', 30)->nullable();
+            $table->string('location', 255)->nullable();
+
+            // Office status
+            $table->enum('status', ['active', 'inactive'])
+                ->default('active');
+
             $table->timestamps();
+
+            // Soft deletion
+            $table->boolean('is_deleted')->default(false);
+
+            // Indexes
+            $table->index('office_name');
+            $table->index('status');
+            $table->index('is_deleted');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::disableForeignKeyConstraints();
         Schema::dropIfExists('tbl_offices');
-        Schema::enableForeignKeyConstraints();
     }
 };

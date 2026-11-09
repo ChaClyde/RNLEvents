@@ -21,10 +21,9 @@ return new class extends Migration
 
             // Things needed
             $table->unsignedInteger('chairs')->default(0);
+            $table->unsignedInteger('tables')->default(0);
             $table->boolean('lights_and_sounds')->default(false);
-            $table->boolean('piano')->default(false);
             $table->boolean('multimedia_projector')->default(false);
-            $table->boolean('hvls_electric_fan')->default(false);
             $table->string('others_specify', 150)->nullable();
             $table->unsignedInteger('others_quantity')->nullable();
 

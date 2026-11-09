@@ -22,7 +22,9 @@ class EventController extends Controller
 
     public function getEvent($event_id)
     {
-        $event = Event::with(['venue', 'office'])->findOrFail($event_id);
+        $event = Event::with(['venue', 'office'])
+            ->where('is_deleted', false)
+            ->findOrFail($event_id);
 
         return response()->json([
             'event' => $event,
