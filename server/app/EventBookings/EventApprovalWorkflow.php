@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Permissions\ApprovalStage;
 use App\Permissions\Permission;
 use App\Permissions\PermissionContext;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -27,19 +28,24 @@ class EventApprovalWorkflow
             $input['emergency_bypass'],
         );
 
-        return match ($action) {
-            EventBookingApproval::ACTION_APPROVED => $this->approve($actor, $booking, $input),
-            EventBookingApproval::ACTION_REJECTED => $this->reject($actor, $booking, $input),
-            'cancelled' => $this->cancel($actor, $booking, $input),
-            default => throw ValidationException::withMessages([
-                'status' => ['The selected status is invalid.'],
-            ]),
-        };
+        return DB::transaction(function () use ($actor, $booking, $action, $input) {
+            // Lock the row so two simultaneous decisions can't both pass the checks.
+            $booking = EventBooking::query()
+                ->whereKey($booking->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            return match ($action) {
+                EventBookingApproval::ACTION_APPROVED => $this->approve($actor, $booking, $input),
+                EventBookingApproval::ACTION_REJECTED => $this->reject($actor, $booking, $input),
+                'cancelled' => $this->cancel($actor, $booking, $input),
+                default => throw ValidationException::withMessages([
+                    'status' => ['The selected status is invalid.'],
+                ]),
+            };
+        });
     }
 
-    /**
-     * @param  array<string, mixed>  $input
-     */
     private function approve(User $actor, EventBooking $booking, array $input): EventBooking
     {
         $this->assertPending($booking);
@@ -51,13 +57,7 @@ class EventApprovalWorkflow
         $stage = $booking->approval_stage;
         $nextStage = ApprovalStage::nextEventStage($stage);
 
-        $this->recordDecision(
-            $booking,
-            $actor,
-            $stage,
-            EventBookingApproval::ACTION_APPROVED,
-            $remarks,
-        );
+        $this->recordDecision($booking, $actor, $stage, EventBookingApproval::ACTION_APPROVED, $remarks);
 
         if ($nextStage === null || ApprovalStage::isFinalEventStage($stage)) {
             $booking->update([
@@ -78,9 +78,6 @@ class EventApprovalWorkflow
         return $booking;
     }
 
-    /**
-     * @param  array<string, mixed>  $input
-     */
     private function reject(User $actor, EventBooking $booking, array $input): EventBooking
     {
         $this->assertPending($booking);
@@ -94,13 +91,7 @@ class EventApprovalWorkflow
             'A rejection remark is required.',
         );
 
-        $this->recordDecision(
-            $booking,
-            $actor,
-            $booking->approval_stage,
-            EventBookingApproval::ACTION_REJECTED,
-            $remarks,
-        );
+        $this->recordDecision($booking, $actor, $booking->approval_stage, EventBookingApproval::ACTION_REJECTED, $remarks);
 
         $booking->update([
             'status' => 'rejected',
@@ -110,18 +101,11 @@ class EventApprovalWorkflow
         return $booking;
     }
 
-    /**
-     * @param  array<string, mixed>  $input
-     */
     private function cancel(User $actor, EventBooking $booking, array $input): EventBooking
     {
-        $allowed = ['pending', 'approved'];
-
-        if (!in_array($booking->status, $allowed, true)) {
+        if (!in_array($booking->status, ['pending', 'approved'], true)) {
             throw ValidationException::withMessages([
-                'status' => [
-                    "A {$booking->status} booking cannot be changed to cancelled.",
-                ],
+                'status' => ["A {$booking->status} booking cannot be changed to cancelled."],
             ]);
         }
 
@@ -145,9 +129,7 @@ class EventApprovalWorkflow
     {
         if ($booking->status !== 'pending') {
             throw ValidationException::withMessages([
-                'status' => [
-                    "A {$booking->status} booking cannot be approved or rejected.",
-                ],
+                'status' => ["A {$booking->status} booking cannot be approved or rejected."],
             ]);
         }
     }
@@ -177,10 +159,26 @@ class EventApprovalWorkflow
 
     private function assertCanDecide(User $actor, EventBooking $booking): void
     {
-        // Emergency bypass must not skip or fast-forward the event pipeline.
+        // Nobody approves their own request.
+        if ((int) $booking->requested_by_user_id === (int) $actor->user_id) {
+            throw new HttpException(403, 'You cannot approve your own request.');
+        }
+
+        // Step 1 (dean / office head) is limited to the booking's own office.
+        if ($booking->approval_stage === ApprovalStage::OFFICE_HEAD
+            && (int) $booking->office_id !== (int) $actor->office_id) {
+            throw new HttpException(403, 'This action is unauthorized.');
+        }
+
+        // Role-to-stage rules live in the permission catalog/checker.
         $allowed = $actor->allows(
             Permission::EVENT_APPROVALS_APPROVE,
-            $this->decisionContext($booking),
+            PermissionContext::from([
+                'resource' => $booking,
+                'approval_pipeline' => ApprovalStage::PIPELINE_EVENT,
+                'approval_stage' => $booking->approval_stage,
+                'emergency_bypass' => false,
+            ]),
         );
 
         if (!$allowed) {
@@ -200,23 +198,8 @@ class EventApprovalWorkflow
         }
     }
 
-    private function decisionContext(EventBooking $booking): PermissionContext
+    private function recordDecision(EventBooking $booking, User $actor, string $stage, string $action, ?string $remarks): void
     {
-        return PermissionContext::from([
-            'resource' => $booking,
-            'approval_pipeline' => ApprovalStage::PIPELINE_EVENT,
-            'approval_stage' => $booking->approval_stage,
-            'emergency_bypass' => false,
-        ]);
-    }
-
-    private function recordDecision(
-        EventBooking $booking,
-        User $actor,
-        string $stage,
-        string $action,
-        ?string $remarks,
-    ): void {
         EventBookingApproval::create([
             'event_booking_id' => $booking->event_booking_id,
             'approver_user_id' => $actor->user_id,
@@ -231,9 +214,7 @@ class EventApprovalWorkflow
         $text = $this->nullableText($value);
 
         if ($text === null) {
-            throw ValidationException::withMessages([
-                $field => [$message],
-            ]);
+            throw ValidationException::withMessages([$field => [$message]]);
         }
 
         return $text;

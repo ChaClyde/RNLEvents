@@ -14,12 +14,13 @@ final class ApprovalStage
     public const PIPELINE_EVENT = 'event';
     public const PIPELINE_VEHICLE = 'vehicle';
 
+    /** Office Head -> Event Admin -> Event Approval Admin -> Super Admin */
     public static function eventPipeline(): array
     {
         return [
             self::OFFICE_HEAD,
-            self::EVENT_APPROVAL,
             self::EVENT_ADMIN,
+            self::EVENT_APPROVAL,
             self::SUPER_ADMIN,
         ];
     }
@@ -34,6 +35,11 @@ final class ApprovalStage
         ];
     }
 
+    public static function firstEventStage(): string
+    {
+        return self::eventPipeline()[0];
+    }
+
     public static function isEventStage(string $stage): bool
     {
         return in_array($stage, self::eventPipeline(), true);
@@ -44,11 +50,7 @@ final class ApprovalStage
         $pipeline = self::eventPipeline();
         $index = array_search($stage, $pipeline, true);
 
-        if ($index === false) {
-            return null;
-        }
-
-        return $pipeline[$index + 1] ?? null;
+        return $index === false ? null : ($pipeline[$index + 1] ?? null);
     }
 
     public static function isFinalEventStage(string $stage): bool
@@ -66,11 +68,7 @@ final class ApprovalStage
         $pipeline = self::vehiclePipeline();
         $index = array_search($stage, $pipeline, true);
 
-        if ($index === false) {
-            return null;
-        }
-
-        return $pipeline[$index + 1] ?? null;
+        return $index === false ? null : ($pipeline[$index + 1] ?? null);
     }
 
     public static function isFinalVehicleStage(string $stage): bool

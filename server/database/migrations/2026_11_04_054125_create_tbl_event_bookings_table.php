@@ -20,10 +20,12 @@ return new class extends Migration
             $table->string('purpose', 200);
             $table->text('description')->nullable();
 
-            // Schedule
+            // Schedule summary (real schedule lives in tbl_event_booking_schedules)
+            $table->string('schedule_type', 20)->default('range'); // range | weekly | custom
+            $table->json('weekdays')->nullable();                  // 0 = Sunday ... 6 = Saturday
             $table->date('date_start');
             $table->date('date_end');
-            $table->time('time_start');
+            $table->time('time_start'); // default daily time
             $table->time('time_end');
             $table->unsignedInteger('number_of_days')->default(1);
 
@@ -65,10 +67,34 @@ return new class extends Migration
             $table->index(['status', 'is_deleted']);
             $table->index(['office_id', 'status']);
         });
+
+        // One row per booked date, each with its own start/end time
+        Schema::create('tbl_event_booking_schedules', function (Blueprint $table) {
+            $table->id('event_booking_schedule_id');
+
+            $table->foreignId('event_booking_id')
+                ->constrained('tbl_event_bookings', 'event_booking_id')
+                ->cascadeOnDelete();
+
+            // Denormalized so conflict checks don't need a join
+            $table->foreignId('venue_id')
+                ->constrained('tbl_venues', 'venue_id')
+                ->restrictOnDelete();
+
+            $table->date('schedule_date');
+            $table->time('time_start');
+            $table->time('time_end');
+
+            $table->timestamps();
+
+            $table->index(['venue_id', 'schedule_date']);
+            $table->index('event_booking_id');
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('tbl_event_booking_schedules');
         Schema::dropIfExists('tbl_event_bookings');
     }
 };

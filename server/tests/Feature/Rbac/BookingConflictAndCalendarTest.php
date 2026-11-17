@@ -319,7 +319,9 @@ class BookingConflictAndCalendarTest extends TestCase
             ->json('data');
 
         $this->assertTrue(collect($own)->contains(
-            fn (array $item) => $item['type'] === 'event_booking' && $item['title'] === 'Conflict lecture'
+            fn (array $item) => $item['type'] === 'event_booking'
+                && $item['title'] === 'Conflict lecture'
+                && (int) $item['venue_id'] === $this->hallA->venue_id
         ));
 
         $this->asRole(Role::VEHICLE_ADMIN)
@@ -347,6 +349,39 @@ class BookingConflictAndCalendarTest extends TestCase
                 'from' => now()->toDateString(),
                 'to' => now()->toDateString(),
             ]))
+            ->assertForbidden();
+    }
+
+    public function test_calendar_options_follow_the_same_access_as_the_calendar(): void
+    {
+        $this->asRole(Role::FACULTY_STAFF)
+            ->getJson('/api/calendar/options')
+            ->assertOk()
+            ->assertJsonFragment(['venue' => 'Hall A'])
+            ->assertJsonFragment(['vehicle_name' => 'Van A'])
+            ->assertJsonFragment(['driver_name' => 'Driver A']);
+
+        $this->asRole(Role::STUDENT_REPUBLIC)
+            ->getJson('/api/calendar/options')
+            ->assertOk()
+            ->assertJsonFragment(['venue' => 'Hall A'])
+            ->assertJsonMissing(['vehicle_name' => 'Van A'])
+            ->assertJsonMissing(['driver_name' => 'Driver A']);
+
+        $role = Role::create([
+            'name' => 'No Calendar Options',
+            'slug' => 'no-calendar-options',
+            'status' => 'active',
+            'is_system_role' => false,
+            'is_deleted' => false,
+        ]);
+
+        $outsider = $this->userFor('no-calendar-options', role: $role);
+
+        $this->flushHeaders();
+        $this->app['auth']->forgetGuards();
+        $this->actingAs($outsider, 'web')
+            ->getJson('/api/calendar/options')
             ->assertForbidden();
     }
 

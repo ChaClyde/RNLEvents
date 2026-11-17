@@ -8,7 +8,9 @@ use App\Models\Driver;
 use App\Models\Event;
 use App\Models\EventBooking;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Models\VehicleBooking;
+use App\Models\Venue;
 use App\Permissions\Permission;
 use App\Scheduling\SchedulePeriod;
 use Illuminate\Http\Request;
@@ -53,6 +55,39 @@ class CalendarController extends Controller
         ]);
     }
 
+    public function options(Request $request)
+    {
+        $user = $request->user();
+
+        $venues = $this->canFilterVenues($user)
+            ? Venue::query()
+                ->where('is_deleted', false)
+                ->orderBy('venue')
+                ->get(['venue_id', 'venue'])
+            : [];
+
+        $vehicles = $this->canFilterVehicles($user)
+            ? Vehicle::query()
+                ->where('is_deleted', false)
+                ->orderBy('vehicle_name')
+                ->get(['vehicle_id', 'vehicle_name', 'plate_number'])
+            : [];
+
+        $drivers = $this->canFilterDrivers($user)
+            ? Driver::query()
+                ->where('is_deleted', false)
+                ->orderBy('driver_name')
+                ->get(['driver_id', 'driver_name'])
+            : [];
+
+        return response()->json([
+            'message' => 'Calendar filters loaded successfully.',
+            'venues' => $venues,
+            'vehicles' => $vehicles,
+            'drivers' => $drivers,
+        ]);
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -87,6 +122,9 @@ class CalendarController extends Controller
                 'status' => $booking->status,
                 'start' => SchedulePeriod::combine($booking->date_start, $booking->time_start)->toIso8601String(),
                 'end' => SchedulePeriod::combine($booking->date_end, $booking->time_end)->toIso8601String(),
+                'venue_id' => $booking->venue_id,
+                'vehicle_id' => null,
+                'driver_id' => null,
                 'resource_label' => $booking->venue?->venue,
                 'office' => $booking->office?->office_name,
                 'requested_by' => $booking->requested_by,
@@ -137,6 +175,9 @@ class CalendarController extends Controller
                 'status' => $booking->status,
                 'start' => $booking->tripStartsAt()->toIso8601String(),
                 'end' => $booking->tripEndsAt()->toIso8601String(),
+                'venue_id' => null,
+                'vehicle_id' => $booking->vehicle_id,
+                'driver_id' => $booking->driver_id,
                 'resource_label' => $resource !== '' ? $resource : 'Unassigned',
                 'office' => $booking->office?->office_name,
                 'requested_by' => $booking->requested_by,
@@ -168,6 +209,9 @@ class CalendarController extends Controller
                     'status' => 'scheduled',
                     'start' => SchedulePeriod::combine($event->date_start, $event->time_start)->toIso8601String(),
                     'end' => SchedulePeriod::combine($event->date_end, $event->time_end)->toIso8601String(),
+                    'venue_id' => $event->venue_id,
+                    'vehicle_id' => null,
+                    'driver_id' => null,
                     'resource_label' => $event->venue?->venue,
                     'office' => null,
                     'requested_by' => $event->requested_by,
@@ -206,6 +250,9 @@ class CalendarController extends Controller
                     'status' => 'unavailable',
                     'start' => $start . 'T00:00:00',
                     'end' => $end . 'T23:59:59',
+                    'venue_id' => null,
+                    'vehicle_id' => null,
+                    'driver_id' => $driver->driver_id,
                     'resource_label' => $driver->driver_name,
                     'unavailability_reason' => $reason !== '' ? $reason : $driver->driver_status,
                 ];
@@ -213,5 +260,26 @@ class CalendarController extends Controller
             ->filter()
             ->values()
             ->all();
+    }
+
+    private function canFilterVenues(User $user): bool
+    {
+        return $user->allows(Permission::EVENTS_VIEW)
+            || $user->allows(Permission::EVENT_BOOKINGS_VIEW)
+            || $user->allows(Permission::EVENT_APPROVALS_VIEW);
+    }
+
+    private function canFilterVehicles(User $user): bool
+    {
+        return $user->allows(Permission::VEHICLES_VIEW)
+            || $user->allows(Permission::VEHICLE_BOOKINGS_VIEW)
+            || $user->allows(Permission::VEHICLE_APPROVALS_VIEW);
+    }
+
+    private function canFilterDrivers(User $user): bool
+    {
+        return $user->allows(Permission::DRIVERS_VIEW)
+            || $user->allows(Permission::VEHICLE_BOOKINGS_VIEW)
+            || $user->allows(Permission::VEHICLE_APPROVALS_VIEW);
     }
 }

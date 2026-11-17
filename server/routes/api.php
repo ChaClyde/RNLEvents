@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EventReportController;
 use App\Http\Controllers\Api\VehicleReportController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\VenueCalendarController;
 
 
 // ============================================================
@@ -103,9 +104,9 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         ->prefix('offices')
         ->group(function () {
             Route::get('/loadOffices', 'loadOffices')
-                ->middleware('permission:offices.view');
+                ->middleware('permission:offices.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
             Route::get('/getOffice/{office}', 'getOffice')
-                ->middleware('permission:offices.view');
+                ->middleware('permission:offices.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
 
             Route::post('/storeOffice', 'storeOffice')
                 ->middleware('permission:offices.create');
@@ -178,9 +179,9 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         ->prefix('venues')
         ->group(function () {
             Route::get('/loadVenues', 'loadVenues')
-                ->middleware('permission:venues.view');
+                ->middleware('permission:venues.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
             Route::get('/getVenue/{venue_id}', 'getVenue')
-                ->middleware('permission:venues.view');
+                ->middleware('permission:venues.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
 
             Route::post('/storeVenue', 'storeVenue')
                 ->middleware('permission:venues.create');
@@ -198,7 +199,7 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
                 ->middleware('permission:trash.force_delete');
 
             Route::get('/getVenueImage/{venue_id}', 'showVenueImage')
-                ->middleware('permission:venues.view');
+                ->middleware('permission:venues.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
             Route::delete('/removeVenueImage/{venue_id}', 'removeVenueImage')
                 ->middleware('permission:venues.edit');
         });
@@ -308,6 +309,8 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
                 ->middleware('permission:event_bookings.edit');
             Route::delete('/destroyEventBooking/{event_booking_id}', 'destroyEventBooking')
                 ->middleware('permission:event_bookings.delete');
+            Route::post('/checkAvailability', 'checkAvailability')
+                ->middleware('permission:event_bookings.create,bypassable');
 
             Route::put('/updateStatus/{event_booking_id}', 'updateEventBookingStatus');
 
@@ -357,12 +360,23 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
     Route::prefix('availability')->group(function () {
         Route::get('/venues', [AvailabilityController::class, 'venues'])
             ->middleware('permission:event_bookings.create,or:event_bookings.view,or:event_approvals.view,bypassable');
+
+        Route::get('/venues/{venue_id}/calendar', [VenueCalendarController::class, 'month'])
+            ->whereNumber('venue_id')
+            ->middleware('permission:event_bookings.create,or:event_bookings.view,or:event_approvals.view');
+
+        Route::get('/venues/{venue_id}/day', [VenueCalendarController::class, 'day'])
+            ->whereNumber('venue_id')
+            ->middleware('permission:event_bookings.create,or:event_bookings.view,or:event_approvals.view');
+
         Route::get('/vehicles', [AvailabilityController::class, 'vehicles'])
             ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view,or:vehicles.view');
         Route::get('/drivers', [AvailabilityController::class, 'drivers'])
             ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view,or:drivers.view');
     });
 
+    Route::get('/calendar/options', [CalendarController::class, 'options'])
+        ->middleware('permission:event_bookings.view,or:vehicle_bookings.view,or:event_approvals.view,or:vehicle_approvals.view,or:events.view');
     Route::get('/calendar', [CalendarController::class, 'index'])
         ->middleware('permission:event_bookings.view,or:vehicle_bookings.view,or:event_approvals.view,or:vehicle_approvals.view,or:events.view');
-});
+    });

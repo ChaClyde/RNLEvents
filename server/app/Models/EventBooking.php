@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Permissions\ApprovalStage;
+use App\Scheduling\TimeFormat;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -17,6 +18,8 @@ class EventBooking extends Model
         'venue_id',
         'purpose',
         'description',
+        'schedule_type',
+        'weekdays',
         'date_start',
         'date_end',
         'time_start',
@@ -39,12 +42,16 @@ class EventBooking extends Model
         'date_start' => 'date:Y-m-d',
         'date_end' => 'date:Y-m-d',
 
+        'weekdays' => 'array',
+
         'number_of_days' => 'integer',
         'expected_attendees' => 'integer',
         'requested_by_user_id' => 'integer',
 
         'is_deleted' => 'boolean',
     ];
+
+    protected $appends = ['time_start_label', 'time_end_label'];
 
     /*
     |--------------------------------------------------------------------------
@@ -76,6 +83,15 @@ class EventBooking extends Model
         );
     }
 
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(
+            EventBookingSchedule::class,
+            'event_booking_id',
+            'event_booking_id'
+        )->orderBy('schedule_date');
+    }
+
     public function approvals(): HasMany
     {
         return $this->hasMany(
@@ -90,6 +106,32 @@ class EventBooking extends Model
         return $this->status === 'pending'
             && $this->approval_stage === ApprovalStage::OFFICE_HEAD
             && !$this->approvals()->exists();
+    }
+
+    /** The booking's dates as plain arrays (used by the conflict checker). */
+    public function occurrences(): array
+    {
+        return $this->schedules()->get()->map(fn ($s) => [
+            'date' => $s->schedule_date->toDateString(),
+            'time_start' => TimeFormat::hm($s->time_start),
+            'time_end' => TimeFormat::hm($s->time_end),
+        ])->all();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors
+    |--------------------------------------------------------------------------
+    */
+
+    public function getTimeStartLabelAttribute(): ?string
+    {
+        return TimeFormat::label($this->time_start);
+    }
+
+    public function getTimeEndLabelAttribute(): ?string
+    {
+        return TimeFormat::label($this->time_end);
     }
 
     /*

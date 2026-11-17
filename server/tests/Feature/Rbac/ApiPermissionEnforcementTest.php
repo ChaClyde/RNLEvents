@@ -108,6 +108,7 @@ class ApiPermissionEnforcementTest extends TestCase
             'availability venues' => ['GET', '/api/availability/venues'],
             'availability vehicles' => ['GET', '/api/availability/vehicles'],
             'availability drivers' => ['GET', '/api/availability/drivers'],
+            'calendar options' => ['GET', '/api/calendar/options'],
             'calendar' => ['GET', '/api/calendar'],
             'dashboard' => ['GET', '/api/dashboard'],
             'event report summary' => ['GET', '/api/reports/events/summary'],

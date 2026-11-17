@@ -6,13 +6,15 @@ use App\Http\Controllers\Concerns\ScopesQueriesByPermission;
 use App\Http\Controllers\Controller;
 use App\EventBookings\EventApprovalWorkflow;
 use App\Models\EventBooking;
+use App\Models\EventBookingSchedule;
 use App\Models\User;
 use App\Models\Venue;
 use App\Permissions\AbilityRule;
 use App\Permissions\Permission;
 use App\Permissions\PermissionCatalog;
+use App\Scheduling\BookingScheduleBuilder;
+use App\Scheduling\TimeFormat;
 use App\Scheduling\VenueConflictChecker;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -24,7 +26,7 @@ class EventBookingController extends Controller
 
     private function bookingRelations(): array
     {
-        return ['venue', 'office', 'resources', 'requester', 'approvals.approver'];
+        return ['venue', 'office', 'resources', 'schedules', 'requester', 'approvals.approver'];
     }
 
     /*
@@ -39,6 +41,7 @@ class EventBookingController extends Controller
             'venue:venue_id,venue,location,capacity,status',
             'office:office_id,office_name,office_code',
             'resources',
+            'schedules',
             'requester',
             'approvals.approver',
         ])->where('is_deleted', false);
@@ -120,6 +123,45 @@ class EventBookingController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | Check Availability (dry run: conflicts + suggestions, saves nothing)
+    |--------------------------------------------------------------------------
+    */
+
+    public function checkAvailability(Request $request)
+    {
+        $this->normalizeTimes($request);
+
+        $validated = $request->validate(array_merge([
+            'venue_id' => [
+                'required',
+                'integer',
+                Rule::exists('tbl_venues', 'venue_id')
+                    ->where(fn ($q) => $q->where('is_deleted', false)),
+            ],
+            'exclude_event_booking_id' => ['nullable', 'integer'],
+        ], $this->scheduleRules()), $this->scheduleMessages());
+
+        $occurrences = app(BookingScheduleBuilder::class)->build($validated);
+        $checker = app(VenueConflictChecker::class);
+        $exclude = $validated['exclude_event_booking_id'] ?? null;
+
+        $conflicts = $checker->detect($validated['venue_id'], $occurrences, $exclude);
+
+        return response()->json([
+            'available' => empty($conflicts),
+            'occurrences' => array_map(fn ($o) => $o + [
+                'time_start_label' => TimeFormat::label($o['time_start']),
+                'time_end_label' => TimeFormat::label($o['time_end']),
+            ], $occurrences),
+            'conflicts' => $conflicts,
+            'suggestions' => $conflicts
+                ? $checker->suggest($validated['venue_id'], $occurrences, $conflicts, $exclude)
+                : [],
+        ], 200);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Store Event Booking
     |--------------------------------------------------------------------------
     */
@@ -127,8 +169,9 @@ class EventBookingController extends Controller
     public function storeEventBooking(Request $request)
     {
         $validated = $this->validateBooking($request);
+        $occurrences = app(BookingScheduleBuilder::class)->build($validated);
 
-        $eventBooking = DB::transaction(function () use ($request, $validated) {
+        $eventBooking = DB::transaction(function () use ($request, $validated, $occurrences) {
 
             // Lock the venue row so two requests cannot book the same slot
             $venue = Venue::where('venue_id', $validated['venue_id'])
@@ -141,22 +184,19 @@ class EventBookingController extends Controller
             $this->assertVenueBookable($venue, $validated);
             $this->assertResourcesBookable($venue, $resources);
 
-            $this->checkVenueConflict(
-                $request->user(),
-                $validated['venue_id'],
-                $validated['date_start'],
-                $validated['date_end'],
-                $validated['time_start'],
-                $validated['time_end']
+            app(VenueConflictChecker::class)->assertAvailable(
+                $venue->venue_id,
+                $occurrences
             );
 
-            $data = $this->prepareBookingData($validated, $request, true);
+            $data = $this->prepareBookingData($validated, $request, true, $occurrences);
 
             $data['status'] = 'pending';
             $data['approval_stage'] = 'office_head';
 
             $eventBooking = EventBooking::create($data);
 
+            $this->syncSchedules($eventBooking, $occurrences);
             $this->syncResources($eventBooking, $venue, $resources);
 
             return $eventBooking;
@@ -177,8 +217,9 @@ class EventBookingController extends Controller
     public function updateEventBooking(Request $request, $event_booking_id)
     {
         $validated = $this->validateBooking($request);
+        $occurrences = app(BookingScheduleBuilder::class)->build($validated);
 
-        $eventBooking = DB::transaction(function () use ($request, $validated, $event_booking_id) {
+        $eventBooking = DB::transaction(function () use ($request, $validated, $occurrences, $event_booking_id) {
 
             $venue = Venue::where('venue_id', $validated['venue_id'])
                 ->where('is_deleted', false)
@@ -201,19 +242,18 @@ class EventBookingController extends Controller
             $this->assertResourcesBookable($venue, $resources);
 
             // Exclude the current booking from the conflict check
-            $this->checkVenueConflict(
-                $request->user(),
-                $validated['venue_id'],
-                $validated['date_start'],
-                $validated['date_end'],
-                $validated['time_start'],
-                $validated['time_end'],
+            app(VenueConflictChecker::class)->assertAvailable(
+                $venue->venue_id,
+                $occurrences,
                 $eventBooking->event_booking_id
             );
 
-            $eventBooking->update($this->prepareBookingData($validated, $request, false));
+            $eventBooking->update(
+                $this->prepareBookingData($validated, $request, false, $occurrences)
+            );
 
-            // The submitted list replaces the previous one
+            // The submitted lists replace the previous ones
+            $this->syncSchedules($eventBooking, $occurrences);
             $this->syncResources($eventBooking, $venue, $resources);
 
             return $eventBooking;
@@ -272,7 +312,7 @@ class EventBookingController extends Controller
 
     public function restoreEventBooking(Request $request, $event_booking_id)
     {
-        $eventBooking = DB::transaction(function () use ($request, $event_booking_id) {
+        $eventBooking = DB::transaction(function () use ($event_booking_id) {
 
             $eventBooking = EventBooking::where('is_deleted', true)
                 ->lockForUpdate()
@@ -285,15 +325,7 @@ class EventBookingController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                $this->checkVenueConflict(
-                    $request->user(),
-                    $eventBooking->venue_id,
-                    $eventBooking->date_start->toDateString(),
-                    $eventBooking->date_end->toDateString(),
-                    $eventBooking->time_start,
-                    $eventBooking->time_end,
-                    $eventBooking->event_booking_id
-                );
+                $this->assertNoConflict($eventBooking);
             }
 
             $eventBooking->update([
@@ -320,7 +352,7 @@ class EventBookingController extends Controller
         $eventBooking = EventBooking::where('is_deleted', true)
             ->findOrFail($event_booking_id);
 
-        // Booking resources are removed automatically (cascadeOnDelete)
+        // Booking resources and schedules are removed automatically (cascadeOnDelete)
         $eventBooking->delete();
 
         return response()->json([
@@ -365,15 +397,7 @@ class EventBookingController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                $this->checkVenueConflict(
-                    $request->user(),
-                    $eventBooking->venue_id,
-                    $eventBooking->date_start->toDateString(),
-                    $eventBooking->date_end->toDateString(),
-                    $eventBooking->time_start,
-                    $eventBooking->time_end,
-                    $eventBooking->event_booking_id
-                );
+                $this->assertNoConflict($eventBooking);
             }
 
             return app(EventApprovalWorkflow::class)->apply(
@@ -417,7 +441,9 @@ class EventBookingController extends Controller
 
     private function validateBooking(Request $request): array
     {
-        return $request->validate([
+        $this->normalizeTimes($request);
+
+        return $request->validate(array_merge($this->scheduleRules(), [
             'venue_id' => [
                 'required',
                 'integer',
@@ -427,12 +453,6 @@ class EventBookingController extends Controller
 
             'purpose' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
-
-            'date_start' => ['required', 'date', 'after_or_equal:today'],
-            'date_end' => ['required', 'date', 'after_or_equal:date_start'],
-
-            'time_start' => ['required', 'date_format:H:i'],
-            'time_end' => ['required', 'date_format:H:i', 'after:time_start'],
 
             'expected_attendees' => ['nullable', 'integer', 'min:0'],
 
@@ -469,7 +489,96 @@ class EventBookingController extends Controller
 
             'email' => ['required', 'email', 'max:150'],
             'tel_number' => ['required', 'string', 'max:30'],
-        ]);
+        ]), $this->scheduleMessages());
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Schedule Rules (shared by store/update/check-availability)
+    |--------------------------------------------------------------------------
+    */
+
+    private function scheduleRules(): array
+    {
+        return [
+            // range = every day, weekly = selected weekdays, custom = hand-picked dates
+            'schedule_type' => ['required', Rule::in(['range', 'weekly', 'custom'])],
+
+            'date_start' => ['required_unless:schedule_type,custom', 'nullable', 'date', 'after_or_equal:today'],
+            'date_end' => ['required_unless:schedule_type,custom', 'nullable', 'date', 'after_or_equal:date_start'],
+
+            // weekly: 0 = Sunday ... 6 = Saturday
+            'weekdays' => ['required_if:schedule_type,weekly', 'nullable', 'array', 'min:1'],
+            'weekdays.*' => ['integer', 'between:0,6'],
+
+            'excluded_dates' => ['nullable', 'array'],
+            'excluded_dates.*' => ['date'],
+
+            // custom: hand-picked dates (time fields optional, fall back to the default time)
+            'dates' => [
+                'required_if:schedule_type,custom',
+                'nullable',
+                'array',
+                'min:1',
+                'max:' . BookingScheduleBuilder::MAX_OCCURRENCES,
+            ],
+            'dates.*.date' => ['required', 'date', 'after_or_equal:today'],
+            'dates.*.time_start' => ['nullable', 'date_format:H:i'],
+            'dates.*.time_end' => ['nullable', 'date_format:H:i'],
+
+            // Default daily time
+            'time_start' => ['required', 'date_format:H:i'],
+            'time_end' => ['required', 'date_format:H:i', 'after:time_start'],
+
+            // Per-date time changes (e.g. last day 1 PM - 8 PM)
+            'overrides' => ['nullable', 'array'],
+            'overrides.*.date' => ['required', 'date'],
+            'overrides.*.time_start' => ['required', 'date_format:H:i'],
+            'overrides.*.time_end' => ['required', 'date_format:H:i'],
+        ];
+    }
+
+    private function scheduleMessages(): array
+    {
+        $msg = 'Please enter a valid time, e.g. 1:00 PM.';
+
+        return [
+            'time_start.date_format' => $msg,
+            'time_end.date_format' => $msg,
+            'time_end.after' => 'End time must be after the start time.',
+            'dates.*.time_start.date_format' => $msg,
+            'dates.*.time_end.date_format' => $msg,
+            'overrides.*.time_start.date_format' => $msg,
+            'overrides.*.time_end.date_format' => $msg,
+        ];
+    }
+
+    /** Accepts "1:00 PM", "1pm", "13:00" and converts to 24h "H:i" internally. */
+    private function normalizeTimes(Request $request): void
+    {
+        $input = $request->all();
+
+        foreach (['time_start', 'time_end'] as $key) {
+            if (isset($input[$key])) {
+                $input[$key] = TimeFormat::toDb($input[$key]) ?? $input[$key];
+            }
+        }
+
+        foreach (['overrides', 'dates'] as $list) {
+            foreach ($input[$list] ?? [] as $i => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                foreach (['time_start', 'time_end'] as $key) {
+                    if (isset($row[$key])) {
+                        $input[$list][$i][$key] = TimeFormat::toDb($row[$key]) ?? $row[$key];
+                    }
+                }
+            }
+        }
+
+        $request->merge($input);
     }
 
     /*
@@ -478,14 +587,29 @@ class EventBookingController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    private function prepareBookingData(array $validated, Request $request, bool $creating): array
-    {
-        // Resources are saved separately in syncResources()
-        unset($validated['resources'], $validated['requested_by_user_id']);
+    private function prepareBookingData(
+        array $validated,
+        Request $request,
+        bool $creating,
+        array $occurrences
+    ): array {
+        // Saved separately
+        unset(
+            $validated['resources'],
+            $validated['requested_by_user_id'],
+            $validated['overrides'],
+            $validated['dates'],
+            $validated['excluded_dates'],
+        );
 
-        $validated['number_of_days'] = (int) Carbon::parse($validated['date_start'])
-            ->startOfDay()
-            ->diffInDays(Carbon::parse($validated['date_end'])->startOfDay()) + 1;
+        // Booking-level summary comes from the real schedule
+        $validated['date_start'] = $occurrences[0]['date'];
+        $validated['date_end'] = end($occurrences)['date'];
+        $validated['number_of_days'] = count($occurrences);
+
+        if ($validated['schedule_type'] !== 'weekly') {
+            $validated['weekdays'] = null;
+        }
 
         $validated['expected_attendees'] = $validated['expected_attendees'] ?? 0;
 
@@ -646,27 +770,39 @@ class EventBookingController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | Venue Schedule Conflict Checker
+    | Save Schedule (one row per date, each with its own time)
     |--------------------------------------------------------------------------
     */
 
-    private function checkVenueConflict(
-        User $actor,
-        $venue_id,
-        $date_start,
-        $date_end,
-        $time_start,
-        $time_end,
-        $exclude_event_booking_id = null
-    ): void {
+    private function syncSchedules(EventBooking $eventBooking, array $occurrences): void
+    {
+        $eventBooking->schedules()->delete();
+
+        $now = now();
+
+        EventBookingSchedule::insert(array_map(fn ($o) => [
+            'event_booking_id' => $eventBooking->event_booking_id,
+            'venue_id' => $eventBooking->venue_id,
+            'schedule_date' => $o['date'],
+            'time_start' => $o['time_start'],
+            'time_end' => $o['time_end'],
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $occurrences));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Venue Schedule Conflict Check (for an already-saved booking)
+    |--------------------------------------------------------------------------
+    */
+
+    private function assertNoConflict(EventBooking $eventBooking): void
+    {
         app(VenueConflictChecker::class)->assertAvailable(
-            $actor,
-            (int) $venue_id,
-            $date_start,
-            $date_end,
-            $time_start,
-            $time_end,
-            $exclude_event_booking_id !== null ? (int) $exclude_event_booking_id : null,
+            $eventBooking->venue_id,
+            $eventBooking->occurrences(),
+            $eventBooking->event_booking_id,
         );
     }
 }
