@@ -6,7 +6,9 @@ interface DashboardChartProps {
   variant?: "bar" | "distribution";
 }
 
-const COLORS = ["#1E3A5F", "#0095D9", "#0F766E", "#F59E0B", "#94A3B8"];
+// FCU palette: royal blue, yellow, light blue, navy, slate
+// (hex values are required here because SVG strokes can't use Tailwind classes)
+const COLORS = ["#1D4ED8", "#F5B800", "#60A5FA", "#0F1F3D", "#94A3B8"];
 
 const DashboardChart = ({
   chart,
@@ -25,11 +27,9 @@ const DashboardChart = ({
 
   if (chart.series.length === 0) {
     return (
-      <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-          {chart.title}
-        </h2>
-        <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
+      <section className="rounded-xl border border-line bg-surface p-5">
+        <h2 className="text-base font-semibold text-ink">{chart.title}</h2>
+        <p className="mt-6 text-sm text-muted">
           No chart data for this period.
         </p>
       </section>
@@ -37,14 +37,13 @@ const DashboardChart = ({
   }
 
   if (isDistribution) {
-    const total = chart.series.reduce((sum, point) => sum + point.value, 0) || 1;
+    const total =
+      chart.series.reduce((sum, point) => sum + point.value, 0) || 1;
     let offset = 0;
 
     return (
-      <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-          {chart.title}
-        </h2>
+      <section className="rounded-xl border border-line bg-surface p-5">
+        <h2 className="text-base font-semibold text-ink">{chart.title}</h2>
         <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row">
           <svg viewBox="0 0 42 42" className="h-36 w-36 shrink-0" role="img">
             <title>{chart.title}</title>
@@ -73,7 +72,7 @@ const DashboardChart = ({
             {chart.series.map((point, index) => (
               <li
                 key={point.label}
-                className="flex items-center justify-between gap-3 text-slate-600 dark:text-slate-300"
+                className="flex items-center justify-between gap-3 text-muted"
               >
                 <span className="flex items-center gap-2">
                   <span
@@ -82,7 +81,7 @@ const DashboardChart = ({
                   />
                   {point.label}
                 </span>
-                <span className="font-semibold">{point.value}</span>
+                <span className="font-semibold text-ink">{point.value}</span>
               </li>
             ))}
           </ul>
@@ -92,10 +91,8 @@ const DashboardChart = ({
   }
 
   return (
-    <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-        {chart.title}
-      </h2>
+    <section className="rounded-xl border border-line bg-surface p-5">
+      <h2 className="text-base font-semibold text-ink">{chart.title}</h2>
       <div className="mt-4 flex h-48 items-end gap-1 overflow-x-auto">
         {chart.series.map((point) => (
           <div
@@ -107,31 +104,31 @@ const DashboardChart = ({
           >
             <div className="flex h-40 w-full items-end justify-center gap-0.5">
               <div
-                className="w-full max-w-4 rounded-t bg-[#1E3A5F] dark:bg-[#0095D9]"
+                className="w-full max-w-4 rounded-t bg-primary"
                 style={{ height: `${(point.value / max) * 100}%` }}
               />
               {stacked && (
                 <div
-                  className="w-full max-w-4 rounded-t bg-[#0095D9]"
+                  className="w-full max-w-4 rounded-t bg-accent"
                   style={{
                     height: `${((point.secondary ?? 0) / max) * 100}%`,
                   }}
                 />
               )}
             </div>
-            <span className="max-w-full truncate text-[10px] text-slate-500 dark:text-slate-400">
+            <span className="max-w-full truncate text-[10px] text-muted">
               {point.label}
             </span>
           </div>
         ))}
       </div>
       {stacked && (
-        <div className="mt-3 flex gap-4 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-3 flex gap-4 text-xs text-muted">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-[#1E3A5F]" /> Events
+            <span className="h-2 w-2 rounded-sm bg-primary" /> Events
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-[#0095D9]" /> Vehicles
+            <span className="h-2 w-2 rounded-sm bg-accent" /> Vehicles
           </span>
         </div>
       )}

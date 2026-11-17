@@ -7,13 +7,13 @@ import CloseButton from "../../../components/Button/CloseButton";
 import DriverService from "../../../services/DriverService";
 import type { DriverFieldErrors } from "../../../interfaces/DriverColumns";
 import type { VehicleColumns } from "../../../interfaces/VehicleColumns";
-import { parseApiErrors } from "../../../interfaces/ApiErrorHelpers";
 import {
   buildDriverPayload,
   emptyDriverForm,
   validateDriverForm,
   type DriverFormValues,
 } from "../../../interfaces/DriverHelpers";
+import { parseApiErrors } from "../../../interfaces/ApiErrorHelpers";
 import DriverFormFields, { DriverFormError } from "./DriverFormFields";
 
 interface AddDriverFormModalProps {

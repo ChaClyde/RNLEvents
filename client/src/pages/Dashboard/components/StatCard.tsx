@@ -5,11 +5,9 @@ interface StatCardProps {
 
 const StatCard = ({ label, value }: StatCardProps) => {
   return (
-    <article className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-        {label}
-      </p>
-      <p className="mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] dark:text-white">
+    <article className="rounded-xl border border-line bg-surface p-5">
+      <p className="text-sm font-medium text-muted">{label}</p>
+      <p className="mt-2 text-3xl font-bold tracking-tight text-ink">
         {value.toLocaleString()}
       </p>
     </article>

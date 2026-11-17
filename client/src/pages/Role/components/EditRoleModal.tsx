@@ -106,38 +106,33 @@ const EditRoleModal: FC<EditRoleModalProps> = ({
     >
       <form onSubmit={handleUpdateRole} className="space-y-6">
         {/* Header */}
-        <div className="relative overflow-hidden rounded-2xl border border-[#0095D9]/20 bg-[#0095D9]/5 p-6">
-          <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#0095D9]/15 blur-3xl" />
-          <div className="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-[#003B5C]/10 blur-3xl" />
-
-          <div className="relative flex items-center gap-4">
-            <div className="rounded-2xl bg-linear-to-r from-[#003B5C] to-[#0095D9] p-3">
-              <Pencil className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-[#003B5C]">Edit Role</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                Update the role's name, description, and status.
-              </p>
-            </div>
+        <div className="flex items-center gap-4 border-b border-line pb-5">
+          <div className="rounded-xl bg-primary-soft p-3 text-primary">
+            <Pencil className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-ink">Edit Role</h1>
+            <p className="mt-1 text-sm text-muted">
+              Update the role's name, description, and status.
+            </p>
           </div>
         </div>
 
         {/* System role notice */}
         {isSystemRole && (
-          <div className="flex items-start gap-3 rounded-2xl border border-[#0095D9]/20 bg-[#0095D9]/5 p-4">
-            <Lock size={18} className="text-[#0095D9] mt-0.5 shrink-0" />
-            <p className="text-sm text-[#003B5C]">
+          <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary-soft p-4">
+            <Lock size={18} className="mt-0.5 shrink-0 text-primary" />
+            <p className="text-sm text-ink">
               This is a system role. Only its description can be changed.
             </p>
           </div>
         )}
 
         {/* Role Information */}
-        <div className="rounded-2xl border border-[#0095D9]/20 bg-white p-5">
+        <div className="rounded-xl border border-line bg-surface p-5">
           <div className="mb-5 flex items-center gap-2">
-            <FileText size={18} className="text-[#0095D9]" />
-            <h2 className="font-semibold text-[#003B5C]">Role Information</h2>
+            <FileText size={18} className="text-primary" />
+            <h2 className="font-semibold text-ink">Role Information</h2>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
@@ -153,7 +148,7 @@ const EditRoleModal: FC<EditRoleModalProps> = ({
                 readOnly={isSystemRole}
                 errors={errors.name ?? errors.slug}
               />
-              <p className="mt-1.5 text-xs text-gray-400">
+              <p className="mt-1.5 text-xs text-muted">
                 Slug: <span className="font-mono">{slugPreview}</span>
               </p>
             </div>
@@ -171,10 +166,10 @@ const EditRoleModal: FC<EditRoleModalProps> = ({
         </div>
 
         {/* Status */}
-        <div className="rounded-2xl border border-[#0095D9]/20 bg-white p-5">
+        <div className="rounded-xl border border-line bg-surface p-5">
           <div className="mb-5 flex items-center gap-2">
-            <ToggleRight size={18} className="text-[#003B5C]" />
-            <h2 className="font-semibold text-[#003B5C]">Role Status</h2>
+            <ToggleRight size={18} className="text-primary" />
+            <h2 className="font-semibold text-ink">Role Status</h2>
           </div>
 
           <RoleStatusSelect
@@ -186,13 +181,13 @@ const EditRoleModal: FC<EditRoleModalProps> = ({
         </div>
 
         {formError && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-danger">
             {formError}
           </p>
         )}
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-[#0095D9]/10">
+        <div className="flex justify-end gap-3 border-t border-line pt-5">
           {!loadingUpdate && <CloseButton label="Close" onClose={onClose} />}
           <SubmitButton
             label="Update Role"

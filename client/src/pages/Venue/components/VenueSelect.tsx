@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
 import {
   FiAlertCircle,
   FiCheck,
   FiChevronDown,
   FiClock,
+  FiImage,
   FiMail,
   FiMapPin,
   FiPackage,
@@ -14,6 +14,46 @@ import {
 
 import VenueService from "../../../services/VenueService";
 import type { VenueColumns } from "../../../interfaces/VenueColumns";
+import { useEffect, useRef, useState } from "react";
+
+// ============================================================
+// VENUE THUMBNAIL (photo, or an icon when there is none / it fails to load)
+// ============================================================
+
+const VenueThumb = ({
+  venue,
+  className = "h-14 w-14",
+}: {
+  venue: VenueColumns;
+  className?: string;
+}) => {
+  const [failed, setFailed] = useState(false);
+
+  // A new photo (or a different venue) gets a fresh attempt
+  useEffect(() => {
+    setFailed(false);
+  }, [venue.venue_id, venue.updated_at]);
+
+  if (!venue.venue_image || failed) {
+    return (
+      <span
+        className={`flex shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-400 dark:bg-gray-800 ${className}`}
+      >
+        <FiImage size={18} />
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={`${VenueService.getVenueImage(venue.venue_id)}?v=${venue.updated_at}`}
+      alt={venue.venue}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={`shrink-0 rounded-lg object-cover ${className}`}
+    />
+  );
+};
 
 // ============================================================
 // VENUE DROPDOWN
@@ -80,22 +120,26 @@ const VenueSelect = ({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex w-full items-center justify-between gap-3 rounded-xl border bg-gray-50 px-4 py-2.5 text-left text-sm outline-none transition focus:border-[#0095D9] focus:ring-2 focus:ring-[#0095D9]/10 disabled:opacity-60 dark:bg-gray-800 ${
+        className={`flex w-full items-center justify-between gap-3 rounded-xl border bg-gray-50 px-3 py-2 text-left text-sm outline-none transition focus:border-[#0095D9] focus:ring-2 focus:ring-[#0095D9]/10 disabled:opacity-60 dark:bg-gray-800 ${
           error ? "border-red-400" : "border-gray-200 dark:border-gray-700"
         }`}
       >
         {selectedVenue ? (
-          <span className="min-w-0">
-            <span className="block truncate font-semibold text-gray-800 dark:text-white">
-              {selectedVenue.venue}
-            </span>
-            <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
-              {selectedVenue.location} • Capacity{" "}
-              {selectedVenue.capacity.toLocaleString()}
+          <span className="flex min-w-0 items-center gap-3">
+            <VenueThumb venue={selectedVenue} className="h-10 w-10" />
+
+            <span className="min-w-0">
+              <span className="block truncate font-semibold text-gray-800 dark:text-white">
+                {selectedVenue.venue}
+              </span>
+              <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
+                {selectedVenue.location} • Capacity{" "}
+                {selectedVenue.capacity.toLocaleString()}
+              </span>
             </span>
           </span>
         ) : (
-          <span className="text-gray-400">Choose a venue</span>
+          <span className="px-1 py-1.5 text-gray-400">Choose a venue</span>
         )}
 
         <FiChevronDown
@@ -108,7 +152,7 @@ const VenueSelect = ({
       {open && (
         <div
           role="listbox"
-          className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+          className="absolute z-20 mt-2 max-h-96 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
         >
           {venues.length === 0 && (
             <p className="px-3 py-4 text-center text-sm text-gray-400">
@@ -132,12 +176,14 @@ const VenueSelect = ({
                   onChange(String(venue.venue_id));
                   setOpen(false);
                 }}
-                className={`flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition ${
+                className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition ${
                   isSelected
                     ? "bg-[#0095D9]/10"
                     : "hover:bg-gray-100 dark:hover:bg-gray-800"
                 } ${!selectable ? "cursor-not-allowed opacity-50" : ""}`}
               >
+                <VenueThumb venue={venue} className="h-16 w-16" />
+
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold text-gray-800 dark:text-white">
@@ -170,9 +216,7 @@ const VenueSelect = ({
                   </span>
                 </span>
 
-                {isSelected && (
-                  <FiCheck className="mt-1 shrink-0 text-[#0095D9]" />
-                )}
+                {isSelected && <FiCheck className="shrink-0 text-[#0095D9]" />}
               </button>
             );
           })}

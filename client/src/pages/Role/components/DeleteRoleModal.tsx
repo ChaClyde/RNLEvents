@@ -6,14 +6,13 @@ import {
   FileText,
   Users,
   AlertTriangle,
-  CircleCheck,
-  CircleX,
   Lock,
 } from "lucide-react";
 import Modal from "../../../components/Modal";
 import CloseButton from "../../../components/Button/CloseButton";
 import SubmitButton from "../../../components/Button/SubmitButton";
 import RoleService from "../../../services/RoleService";
+import RoleStatusBadge from "./RoleStatusBadge";
 import type { RoleColumns } from "../../../interfaces/RoleColumns";
 
 interface DeleteRoleModalProps {
@@ -71,8 +70,6 @@ const DeleteRoleModal: FC<DeleteRoleModalProps> = ({
 
   if (!role) return null;
 
-  const isActive = String(role.status).toLowerCase() === "active";
-
   return (
     <Modal
       isOpen={role !== null}
@@ -82,87 +79,71 @@ const DeleteRoleModal: FC<DeleteRoleModalProps> = ({
     >
       <form onSubmit={handleDestroyRole} className="space-y-6">
         {/* Header */}
-        <div className="relative overflow-hidden rounded-3xl border border-red-200 bg-red-50 p-6">
-          <div className="relative flex items-center gap-4">
-            <div className="rounded-2xl bg-red-500 p-3">
-              <Trash2 className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Delete Role</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                This role will be moved to Trash and can be restored later.
-              </p>
-            </div>
+        <div className="flex items-center gap-4 border-b border-line pb-5">
+          <div className="rounded-xl bg-danger-soft p-3 text-danger">
+            <Trash2 className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-ink">Delete Role</h1>
+            <p className="mt-1 text-sm text-muted">
+              This role will be moved to Trash and can be restored later.
+            </p>
           </div>
         </div>
 
         {/* Role Summary */}
-        <div className="rounded-3xl border border-gray-200 bg-white p-6">
+        <div className="rounded-xl border border-line bg-surface p-6">
           <div className="flex flex-col items-center">
-            <div className="flex h-28 w-28 items-center justify-center rounded-full bg-red-400 text-white shadow-lg">
-              <Shield size={44} />
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-danger-soft text-danger">
+              <Shield size={32} />
             </div>
 
-            <h2 className="mt-4 text-xl font-bold text-gray-900">
-              {role.name}
-            </h2>
-            <p className="text-gray-500">
-              {role.description || "No description"}
-            </p>
+            <h2 className="mt-4 text-xl font-bold text-ink">{role.name}</h2>
+            <p className="text-muted">{role.description || "No description"}</p>
 
             <div className="mt-3">
-              {isActive ? (
-                <span className="inline-flex items-center gap-2 rounded-full border border-[#0095D9]/20 bg-[#0095D9]/10 px-4 py-1 text-xs font-medium text-[#0095D9]">
-                  <CircleCheck size={14} />
-                  ACTIVE
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-1 text-xs font-medium text-red-500">
-                  <CircleX size={14} />
-                  INACTIVE
-                </span>
-              )}
+              <RoleStatusBadge status={role.status} />
             </div>
           </div>
         </div>
 
         {/* Role Information + Usage */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-3xl border border-gray-200 bg-white p-5">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-line bg-surface p-5">
             <div className="mb-4 flex items-center gap-2">
-              <FileText className="text-[#0095D9]" size={18} />
-              <h3 className="font-semibold text-gray-900">Role Information</h3>
+              <FileText className="text-primary" size={18} />
+              <h3 className="font-semibold text-ink">Role Information</h3>
             </div>
             <div className="space-y-4 text-sm">
               <div>
-                <p className="text-gray-500">Role Name</p>
-                <p className="font-medium text-gray-900">{role.name}</p>
+                <p className="text-muted">Role Name</p>
+                <p className="font-medium text-ink">{role.name}</p>
               </div>
               <div>
-                <p className="text-gray-500">Description</p>
-                <p className="font-medium text-gray-900">
+                <p className="text-muted">Description</p>
+                <p className="font-medium text-ink">
                   {role.description || "—"}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-gray-200 bg-white p-5">
+          <div className="rounded-xl border border-line bg-surface p-5">
             <div className="mb-4 flex items-center gap-2">
-              <Users className="text-[#003B5C]" size={18} />
-              <h3 className="font-semibold text-gray-900">Usage</h3>
+              <Users className="text-primary" size={18} />
+              <h3 className="font-semibold text-ink">Usage</h3>
             </div>
             <div className="space-y-4 text-sm">
               <div>
-                <p className="text-gray-500">Assigned Users</p>
-                <p className="font-medium text-gray-900">{role.users_count}</p>
+                <p className="text-muted">Assigned Users</p>
+                <p className="font-medium text-ink">{role.users_count}</p>
               </div>
               <div>
-                <p className="text-gray-500">Role Type</p>
-                <p className="font-medium text-gray-900 inline-flex items-center gap-1.5">
+                <p className="text-muted">Role Type</p>
+                <p className="inline-flex items-center gap-1.5 font-medium text-ink">
                   {role.is_system_role ? (
                     <>
-                      <Lock size={14} className="text-gray-500" />
+                      <Lock size={14} className="text-muted" />
                       System role
                     </>
                   ) : (
@@ -174,21 +155,24 @@ const DeleteRoleModal: FC<DeleteRoleModalProps> = ({
           </div>
         </div>
 
-        {/* Warning / Blocked / Error */}
+        {/* Blocked / Error (red) or Trash notice (yellow) */}
         {blockedReason || deleteError ? (
           <div
             role="alert"
-            className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4"
+            className="flex items-start gap-3 rounded-xl border border-danger/20 bg-danger-soft p-4"
           >
-            <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
-            <p className="text-sm text-red-700">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-danger" />
+            <p className="text-sm text-danger">
               {blockedReason || deleteError}
             </p>
           </div>
         ) : (
-          <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
-            <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
-            <p className="text-sm text-red-700">
+          <div className="flex items-start gap-3 rounded-xl border border-accent/40 bg-accent-soft p-4">
+            <AlertTriangle
+              size={18}
+              className="mt-0.5 shrink-0 text-[#6b4e00]"
+            />
+            <p className="text-sm text-[#6b4e00]">
               This moves the role to Trash Bin — you can restore or permanently
               delete it from there.
             </p>
@@ -196,7 +180,7 @@ const DeleteRoleModal: FC<DeleteRoleModalProps> = ({
         )}
 
         {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+        <div className="flex justify-end gap-3 border-t border-line pt-5">
           {!loadingDestroy && (
             <CloseButton
               label={blockedReason ? "Close" : "Cancel"}

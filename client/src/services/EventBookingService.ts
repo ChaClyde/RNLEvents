@@ -1,11 +1,13 @@
 import AxiosInstance from "./AxiosInstance";
 
 import type {
+  AvailabilityCheckResponse,
   EventBookingFilters,
   EventBookingFormData,
   EventBookingListResponse,
   EventBookingMessageResponse,
   EventBookingResponse,
+  EventBookingScheduleInput,
   EventBookingStatusData,
 } from "../interfaces/EventBookingColumns";
 
@@ -18,10 +20,23 @@ const EventBookingService = {
     );
   },
 
-  // Get a single event booking with its venue and office
+  // Get a single event booking with its venue, office and schedule
   getEventBooking: async (event_booking_id: string | number) => {
     return await AxiosInstance.get<EventBookingResponse>(
       `/event-bookings/${event_booking_id}`,
+    );
+  },
+
+  // Dry run: conflicts + suggestions, saves nothing
+  checkAvailability: async (
+    data: EventBookingScheduleInput & {
+      venue_id: number;
+      exclude_event_booking_id?: number;
+    },
+  ) => {
+    return await AxiosInstance.post<AvailabilityCheckResponse>(
+      "/event-bookings/check-availability",
+      data,
     );
   },
 

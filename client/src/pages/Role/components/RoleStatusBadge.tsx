@@ -2,8 +2,8 @@ import type { FC } from "react";
 import type { RoleStatus } from "../../../interfaces/RoleColumns";
 
 const STYLES: Record<RoleStatus, string> = {
-  active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  inactive: "bg-slate-100 text-slate-500 ring-slate-200",
+  active: "bg-success-soft text-success ring-success/20",
+  inactive: "bg-page text-muted ring-line",
 };
 
 const RoleStatusBadge: FC<{ status: RoleStatus }> = ({ status }) => (

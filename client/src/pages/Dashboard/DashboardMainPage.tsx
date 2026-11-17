@@ -50,7 +50,8 @@ const DashboardMainPage = () => {
 
   const roleSlug = user?.role?.slug as RoleSlug | undefined;
   const roleLabel =
-    dashboard?.role_label ?? (roleSlug ? ROLE_LABELS[roleSlug] : "FilSched user");
+    dashboard?.role_label ??
+    (roleSlug ? ROLE_LABELS[roleSlug] : "FilSched user");
   const showVehicles =
     dashboard?.capabilities.vehicles !== false &&
     roleSlug !== RoleSlug.STUDENT_REPUBLIC;
@@ -73,25 +74,25 @@ const DashboardMainPage = () => {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 rounded-2xl border border-[#1E3A5F]/15 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:flex-row lg:items-center lg:justify-between">
+      <header className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-medium text-[#0095D9]">FilSched</p>
-          <h1 className="mt-1 text-2xl font-bold text-[#1E3A5F] dark:text-white">
+          <p className="text-sm font-medium text-primary">FilSched</p>
+          <h1 className="mt-1 text-2xl font-bold text-ink">
             Welcome, {dashboard?.user.full_name ?? user?.full_name ?? "there"}
           </h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted">
             {roleLabel}
             {dashboard?.user.office ? ` · ${dashboard.user.office}` : ""}
           </p>
         </div>
-        <label className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
+        <label className="flex flex-col gap-1 text-sm text-muted">
           Chart period
           <select
             value={period}
             onChange={(event) =>
               setPeriod(event.target.value as DashboardPeriod)
             }
-            className="rounded-xl border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm text-[#1E3A5F] outline-none focus:ring-2 focus:ring-[#0095D9] dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+            className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
           >
             {PERIODS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -105,12 +106,12 @@ const DashboardMainPage = () => {
       {loading && <DashboardSkeleton />}
 
       {!loading && error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+        <div className="rounded-xl border border-danger/20 bg-danger-soft p-5 text-danger">
           <p>{error}</p>
           <button
             type="button"
             onClick={() => void loadDashboard()}
-            className="mt-3 rounded-xl bg-[#1E3A5F] px-4 py-2 text-sm font-medium text-white"
+            className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary transition-colors hover:bg-primary-hover"
           >
             Retry
           </button>
@@ -120,7 +121,7 @@ const DashboardMainPage = () => {
       {!loading && !error && dashboard && (
         <>
           {dashboard.cards.length === 0 ? (
-            <p className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+            <p className="rounded-xl border border-line bg-surface p-6 text-sm text-muted">
               No dashboard statistics are available for this account.
             </p>
           ) : (
@@ -128,8 +129,7 @@ const DashboardMainPage = () => {
               {dashboard.cards
                 .filter(
                   (card) =>
-                    showVehicles ||
-                    !card.key.toLowerCase().includes("vehicle"),
+                    showVehicles || !card.key.toLowerCase().includes("vehicle"),
                 )
                 .map((card) => (
                   <StatCard

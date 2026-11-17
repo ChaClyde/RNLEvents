@@ -17,7 +17,7 @@ const RoleStatusSelect: FC<RoleStatusSelectProps> = ({
   <div>
     <label
       htmlFor="role-status"
-      className="mb-1.5 block text-sm font-medium text-[#003B5C]"
+      className="mb-1.5 block text-sm font-medium text-ink"
     >
       Status
     </label>
@@ -27,12 +27,12 @@ const RoleStatusSelect: FC<RoleStatusSelectProps> = ({
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as RoleStatus)}
-      className="w-full rounded-md border border-slate-900 bg-white px-3 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0095D9] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+      className="w-full rounded-lg border border-line bg-surface px-3 py-3 text-sm text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-page disabled:text-muted"
     >
       <option value="active">Active</option>
       <option value="inactive">Inactive</option>
     </select>
-    {errors?.[0] && <p className="mt-1 text-xs text-red-600">{errors[0]}</p>}
+    {errors?.[0] && <p className="mt-1 text-xs text-danger">{errors[0]}</p>}
   </div>
 );
 

@@ -12,16 +12,16 @@ interface RoleModalShellProps {
 
 const TONES = {
   default: {
-    border: "border-[#0095D9]/20",
-    bar: "bg-gradient-to-r from-[#003B5C] to-[#0095D9]",
-    divider: "border-[#0095D9]/10",
-    title: "text-[#003B5C]",
+    border: "border-line",
+    bar: "bg-primary",
+    divider: "border-line",
+    title: "text-ink",
   },
   danger: {
-    border: "border-red-100",
-    bar: "bg-red-500",
-    divider: "border-red-50",
-    title: "text-red-900",
+    border: "border-danger/20",
+    bar: "bg-danger",
+    divider: "border-line",
+    title: "text-danger",
   },
 };
 
@@ -54,7 +54,7 @@ const RoleModalShell: FC<RoleModalShellProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-[#003B5C]/40"
+        className="absolute inset-0 bg-ink/40"
         onClick={() => !busy && onClose()}
         aria-hidden="true"
       />
@@ -63,7 +63,7 @@ const RoleModalShell: FC<RoleModalShellProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative w-full max-w-lg overflow-hidden rounded-xl border bg-white shadow-xl ${styles.border}`}
+        className={`relative w-full max-w-lg overflow-hidden rounded-xl border bg-surface shadow-lg ${styles.border}`}
       >
         <div className={`h-1 ${styles.bar}`} />
 
@@ -78,7 +78,7 @@ const RoleModalShell: FC<RoleModalShellProps> = ({
               {title}
             </h3>
             {description && (
-              <p className="mt-0.5 text-xs text-slate-400">{description}</p>
+              <p className="mt-0.5 text-xs text-muted">{description}</p>
             )}
           </div>
 
@@ -87,7 +87,7 @@ const RoleModalShell: FC<RoleModalShellProps> = ({
             onClick={onClose}
             disabled={busy}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+            className="rounded-lg p-1.5 text-muted transition hover:bg-page hover:text-ink disabled:opacity-50"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"

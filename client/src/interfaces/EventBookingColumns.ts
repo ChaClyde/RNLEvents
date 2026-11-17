@@ -15,6 +15,131 @@ export type EventBookingStatus =
 export type EventBookingStatusChange = Exclude<EventBookingStatus, "pending">;
 
 // ============================================================
+// SCHEDULE
+// ============================================================
+
+// range = every day, weekly = selected weekdays, custom = hand-picked dates
+export type ScheduleType = "range" | "weekly" | "custom";
+
+// One booked date with its own start/end time
+export interface EventBookingScheduleRow {
+  event_booking_schedule_id: number;
+  event_booking_id: number;
+  venue_id: number;
+  schedule_date: string; // YYYY-MM-DD
+  time_start: string; // HH:MM:SS
+  time_end: string; // HH:MM:SS
+  time_start_label: string | null; // "1:00 PM"
+  time_end_label: string | null; // "5:00 PM"
+}
+
+// Sent to the backend (store / update / check-availability)
+export interface EventBookingScheduleInput {
+  schedule_type: ScheduleType;
+  weekdays?: number[]; // weekly only: 0 = Sunday ... 6 = Saturday
+  date_start: string | null;
+  date_end: string | null;
+  time_start: string; // default daily time, "HH:MM"
+  time_end: string;
+  excluded_dates?: string[];
+  overrides?: { date: string; time_start: string; time_end: string }[];
+  dates?: { date: string; time_start: string; time_end: string }[]; // custom
+}
+
+// ============================================================
+// CONFLICTS / SUGGESTIONS / CALENDAR
+// ============================================================
+
+export interface FreeSlot {
+  time_start: string;
+  time_end: string;
+  time_start_label: string;
+  time_end_label: string;
+}
+
+export interface VenueConflict {
+  date: string;
+  requested: {
+    time_start: string;
+    time_end: string;
+    time_start_label: string;
+    time_end_label: string;
+  };
+  conflicts_with: {
+    event_booking_id: number;
+    purpose: string;
+    status: EventBookingStatus;
+    office: string | null;
+    time_start_label: string;
+    time_end_label: string;
+  }[];
+}
+
+export interface ConflictSuggestion {
+  conflict_date: string;
+  free_slots_that_day: FreeSlot[];
+  alternative_dates: {
+    date: string;
+    day: string;
+    time_start_label: string;
+    time_end_label: string;
+  }[];
+}
+
+export interface AvailabilityCheckResponse {
+  available: boolean;
+  conflicts: VenueConflict[];
+  suggestions: ConflictSuggestion[];
+}
+
+export interface CalendarEventSummary {
+  event_booking_id: number;
+  purpose: string;
+  status: EventBookingStatus;
+  office: string | null;
+  time_start_label: string;
+  time_end_label: string;
+}
+
+export interface CalendarEventDetail extends CalendarEventSummary {
+  description: string | null;
+  requested_by: string;
+  approval_stage: string;
+  expected_attendees: number;
+  schedule_type: ScheduleType;
+  booking_date_start: string;
+  booking_date_end: string;
+  number_of_days: number;
+}
+
+export interface VenueCalendarDay {
+  date: string;
+  status: "booked" | "partial";
+  events_count: number;
+  events: CalendarEventSummary[];
+}
+
+export interface VenueCalendarMonthResponse {
+  message: string;
+  data: {
+    venue: { venue_id: number; venue: string; status: string };
+    month: string;
+    window: { start_label: string; end_label: string };
+    days: VenueCalendarDay[]; // dates not listed are fully available
+  };
+}
+
+export interface VenueCalendarDayResponse {
+  message: string;
+  data: {
+    date: string;
+    day: string;
+    events: CalendarEventDetail[];
+    free_slots: FreeSlot[];
+  };
+}
+
+// ============================================================
 // RELATED RECORDS
 // ============================================================
 
@@ -72,12 +197,17 @@ export interface EventBookingColumns {
   purpose: string;
   description: string | null;
 
-  // Schedule
-  date_start: string; // YYYY-MM-DD
-  date_end: string; // YYYY-MM-DD
-  time_start: string; // HH:MM:SS (use toTimeInput() in forms)
-  time_end: string; // HH:MM:SS (use toTimeInput() in forms)
-  number_of_days: number;
+  // Schedule (booking-level summary; per-date rows are in `schedules`)
+  schedule_type: ScheduleType;
+  weekdays: number[] | null; // 0 = Sunday ... 6 = Saturday
+  date_start: string; // YYYY-MM-DD (first date)
+  date_end: string; // YYYY-MM-DD (last date)
+  time_start: string; // default daily time, HH:MM:SS
+  time_end: string; // default daily time, HH:MM:SS
+  time_start_label?: string | null; // "1:00 PM"
+  time_end_label?: string | null; // "5:00 PM"
+  number_of_days: number; // number of booked dates
+  schedules?: EventBookingScheduleRow[];
 
   // Participants
   expected_attendees: number;
@@ -120,16 +250,11 @@ export interface EventBookingColumns {
 // FORM DATA
 // ============================================================
 
-export interface EventBookingFormData {
+export interface EventBookingFormData extends EventBookingScheduleInput {
   venue_id: number;
 
   purpose: string;
   description?: string | null;
-
-  date_start: string; // YYYY-MM-DD
-  date_end: string; // YYYY-MM-DD
-  time_start: string; // HH:MM
-  time_end: string; // HH:MM
 
   expected_attendees: number;
 
@@ -210,6 +335,8 @@ export interface EventBookingFieldErrors {
   description?: string[];
 
   // Schedule
+  schedule?: string[];
+  weekdays?: string[];
   date_start?: string[];
   date_end?: string[];
   time_start?: string[];
@@ -233,6 +360,6 @@ export interface EventBookingFieldErrors {
   approval_remarks?: string[];
   cancellation_reason?: string[];
 
-  // Nested keys such as "resources.0.quantity"
+  // Nested keys such as "resources.0.quantity", "overrides.0.date", "dates.1.date"
   [key: string]: string[] | undefined;
 }

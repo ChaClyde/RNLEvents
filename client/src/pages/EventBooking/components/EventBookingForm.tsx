@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FiX,
   FiCalendar,
@@ -9,27 +9,38 @@ import {
   FiClock,
   FiSave,
   FiAlertCircle,
+  FiCheckCircle,
 } from "react-icons/fi";
 
 import type {
+  ConflictSuggestion,
   EventBookingColumns,
   EventBookingFormData,
   EventBookingResourceInput,
+  VenueConflict,
 } from "../../../interfaces/EventBookingColumns";
 import type { VenueColumns } from "../../../interfaces/VenueColumns";
 import type { OfficeColumns } from "../../../interfaces/OfficeColumns";
 import {
-  calculateDays,
   getToday,
   parseApiError,
-  toTimeInput,
 } from "../../../interfaces/EventBookingHelpers";
+import {
+  buildInitialSchedule,
+  buildOccurrences,
+  buildSchedulePayload,
+  validateSchedule,
+  type ScheduleState,
+  type TimeRange,
+} from "../../../interfaces/EventBookingSchedule";
+import EventBookingService from "../../../services/EventBookingService";
 import VenueSelect, {
   VenueDetailsCard,
 } from "../../Venue/components/VenueSelect";
 import BookingResourcePicker from "./BookingResourcePicker";
-import AvailabilityService from "../../../services/AvailabilityService";
-import type { ScheduleConflict } from "../../../interfaces/EventBookingHelpers";
+import SchedulePicker from "./SchedulePicker";
+import ScheduleConflictPanel from "./ScheduleConflictPanel";
+import VenueCalendarModal from "./VenueCalendarModal";
 
 // ============================================================
 // PROPS
@@ -56,18 +67,13 @@ interface EventBookingFormProps {
 }
 
 // ============================================================
-// INITIAL VALUES
+// INITIAL VALUES (schedule is handled by ScheduleState)
 // ============================================================
 
 const buildInitialState = (booking?: EventBookingColumns | null) => ({
   venue_id: booking ? String(booking.venue_id) : "",
   purpose: booking?.purpose ?? "",
   description: booking?.description ?? "",
-
-  date_start: booking?.date_start?.slice(0, 10) ?? "",
-  date_end: booking?.date_end?.slice(0, 10) ?? "",
-  time_start: toTimeInput(booking?.time_start),
-  time_end: toTimeInput(booking?.time_end),
 
   expected_attendees: booking ? String(booking.expected_attendees ?? 1) : "1",
 
@@ -88,6 +94,21 @@ const buildInitialResources = (
     quantity: resource.quantity,
     notes: resource.notes,
   }));
+
+// Error keys that belong to the schedule section
+const isScheduleErrorKey = (key: string) =>
+  [
+    "schedule",
+    "schedule_type",
+    "date_start",
+    "date_end",
+    "weekdays",
+    "time_start",
+    "time_end",
+  ].includes(key) ||
+  key.startsWith("dates") ||
+  key.startsWith("overrides") ||
+  key.startsWith("excluded_dates");
 
 // ============================================================
 // STYLES
@@ -134,6 +155,9 @@ const EventBookingForm = ({
   const [formData, setFormData] = useState<FormState>(() =>
     buildInitialState(booking),
   );
+  const [schedule, setSchedule] = useState<ScheduleState>(() =>
+    buildInitialSchedule(booking),
+  );
   const [resources, setResources] = useState<EventBookingResourceInput[]>(() =>
     buildInitialResources(booking),
   );
@@ -141,11 +165,15 @@ const EventBookingForm = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [availabilityMessage, setAvailabilityMessage] = useState("");
-  const [availabilityConflicts, setAvailabilityConflicts] = useState<
-    ScheduleConflict[]
-  >([]);
-  const [slotAvailable, setSlotAvailable] = useState(true);
+
+  // Conflict check
+  const [conflicts, setConflicts] = useState<VenueConflict[]>([]);
+  const [suggestions, setSuggestions] = useState<ConflictSuggestion[]>([]);
+  const [checking, setChecking] = useState(false);
+  const checkId = useRef(0);
+
+  const [scheduleNote, setScheduleNote] = useState("");
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const today = getToday();
 
@@ -185,51 +213,87 @@ const EventBookingForm = ({
     [venueOptions, formData.venue_id],
   );
 
-  const totalDays = calculateDays(formData.date_start, formData.date_end);
+  // --------------------------------------
+  // SCHEDULE (derived)
+  // --------------------------------------
+
+  const occurrences = useMemo(() => buildOccurrences(schedule), [schedule]);
+
+  const schedulePayload = useMemo(
+    () => buildSchedulePayload(schedule, occurrences),
+    [schedule, occurrences],
+  );
+
+  const scheduleErrors = useMemo(
+    () => validateSchedule(schedule, occurrences, today),
+    [schedule, occurrences, today],
+  );
+
+  const scheduleReady = Object.keys(scheduleErrors).length === 0;
+
+  const conflictDates = useMemo(
+    () => new Set(conflicts.map((c) => c.date)),
+    [conflicts],
+  );
+
+  // Server messages that have no field of their own in SchedulePicker
+  const scheduleServerMessages = Object.entries(errors)
+    .filter(
+      ([key]) =>
+        key.startsWith("dates") ||
+        key.startsWith("overrides") ||
+        key.startsWith("excluded_dates"),
+    )
+    .map(([, message]) => message);
+
+  // --------------------------------------
+  // CONFLICT CHECK (debounced dry run)
+  // --------------------------------------
+
+  const checkKey = JSON.stringify({
+    venue: formData.venue_id,
+    schedule: schedulePayload,
+    ready: scheduleReady,
+  });
 
   useEffect(() => {
-    if (
-      !formData.venue_id ||
-      !formData.date_start ||
-      !formData.date_end ||
-      !formData.time_start ||
-      !formData.time_end
-    ) {
-      setAvailabilityMessage("");
-      setAvailabilityConflicts([]);
-      setSlotAvailable(true);
+    if (!formData.venue_id || !scheduleReady) {
+      checkId.current += 1;
+      setConflicts([]);
+      setSuggestions([]);
+      setChecking(false);
       return;
     }
 
+    const id = ++checkId.current;
+    setChecking(true);
+
     const handle = window.setTimeout(async () => {
       try {
-        const response = await AvailabilityService.checkVenue({
+        const response = await EventBookingService.checkAvailability({
+          ...schedulePayload,
           venue_id: Number(formData.venue_id),
-          date_start: formData.date_start,
-          date_end: formData.date_end,
-          time_start: formData.time_start,
-          time_end: formData.time_end,
           exclude_event_booking_id: booking?.event_booking_id,
         });
-        setSlotAvailable(response.data.available);
-        setAvailabilityMessage(response.data.message);
-        setAvailabilityConflicts(response.data.conflicts ?? []);
+
+        if (id !== checkId.current) return;
+
+        setConflicts(response.data.conflicts ?? []);
+        setSuggestions(response.data.suggestions ?? []);
       } catch {
-        setSlotAvailable(true);
-        setAvailabilityMessage("");
-        setAvailabilityConflicts([]);
+        // The server checks again on submit, so a failed dry run is not blocking
+        if (id !== checkId.current) return;
+
+        setConflicts([]);
+        setSuggestions([]);
+      } finally {
+        if (id === checkId.current) setChecking(false);
       }
-    }, 300);
+    }, 400);
 
     return () => window.clearTimeout(handle);
-  }, [
-    formData.venue_id,
-    formData.date_start,
-    formData.date_end,
-    formData.time_start,
-    formData.time_end,
-    booking?.event_booking_id,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkKey, booking?.event_booking_id]);
 
   // Server messages about resources ("resources.0.quantity", ...)
   const resourceServerErrors = Object.entries(errors)
@@ -258,6 +322,14 @@ const EventBookingForm = ({
     );
   };
 
+  const clearScheduleErrors = () => {
+    setErrors((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([key]) => !isScheduleErrorKey(key)),
+      ),
+    );
+  };
+
   const handleChange = (field: keyof FormState, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     clearError(field);
@@ -278,12 +350,60 @@ const EventBookingForm = ({
     clearResourceErrors();
   };
 
+  const handleScheduleChange = (next: ScheduleState) => {
+    setSchedule(next);
+    setScheduleNote("");
+    clearScheduleErrors();
+    clearError("venue_id");
+    setServerError("");
+  };
+
+  // Replace one conflicting date with a free date.
+  // A single date cannot be swapped inside a range/weekly pattern, so the
+  // schedule becomes hand-picked dates, each keeping its own time.
+  const handlePickAlternative = (conflictDate: string, newDate: string) => {
+    const dates: string[] = [];
+    const overrides: Record<string, TimeRange> = {};
+
+    occurrences.forEach((o) => {
+      const date = o.date === conflictDate ? newDate : o.date;
+
+      if (!dates.includes(date)) dates.push(date);
+
+      if (
+        o.time_start !== schedule.time_start ||
+        o.time_end !== schedule.time_end
+      ) {
+        overrides[date] = {
+          time_start: o.time_start,
+          time_end: o.time_end,
+        };
+      }
+    });
+
+    setSchedule({
+      ...schedule,
+      type: "custom",
+      customDates: dates.sort(),
+      weekdays: [],
+      excluded: [],
+      overrides,
+    });
+
+    setScheduleNote(
+      schedule.type === "custom"
+        ? ""
+        : "Your schedule is now a list of hand-picked dates so one date could be changed.",
+    );
+    clearScheduleErrors();
+  };
+
   // --------------------------------------
   // VALIDATION
   // --------------------------------------
 
   const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
+    const newErrors: Record<string, string> = { ...scheduleErrors };
 
     if (!formData.venue_id) {
       newErrors.venue_id = "Please select a venue.";
@@ -291,32 +411,6 @@ const EventBookingForm = ({
 
     if (!formData.purpose.trim()) {
       newErrors.purpose = "Event purpose is required.";
-    }
-
-    if (!formData.date_start) {
-      newErrors.date_start = "Start date is required.";
-    } else if (formData.date_start < today) {
-      newErrors.date_start = "Start date cannot be in the past.";
-    }
-
-    if (!formData.date_end) {
-      newErrors.date_end = "End date is required.";
-    } else if (formData.date_start && formData.date_end < formData.date_start) {
-      newErrors.date_end = "End date cannot be before start date.";
-    }
-
-    if (!formData.time_start) {
-      newErrors.time_start = "Start time is required.";
-    }
-
-    if (!formData.time_end) {
-      newErrors.time_end = "End time is required.";
-    } else if (
-      formData.time_start &&
-      formData.time_end <= formData.time_start
-    ) {
-      // The backend requires end time after start time for every booking
-      newErrors.time_end = "End time must be later than start time.";
     }
 
     const attendees = Number(formData.expected_attendees);
@@ -387,18 +481,27 @@ const EventBookingForm = ({
     setServerError("");
     setSubmitted(true);
 
-    if (!validateForm() || !slotAvailable) return;
+    if (!validateForm()) return;
+
+    if (checking) {
+      setServerError("Still checking the venue schedule. Please try again.");
+      return;
+    }
+
+    if (conflicts.length > 0) {
+      setServerError(
+        "The venue is already booked on some of your dates. Pick another date or change the time.",
+      );
+      return;
+    }
 
     const payload: EventBookingFormData = {
+      ...schedulePayload,
+
       venue_id: Number(formData.venue_id),
 
       purpose: formData.purpose.trim(),
       description: formData.description.trim() || null,
-
-      date_start: formData.date_start,
-      date_end: formData.date_end,
-      time_start: formData.time_start,
-      time_end: formData.time_end,
 
       expected_attendees: Number(formData.expected_attendees),
 
@@ -561,87 +664,68 @@ const EventBookingForm = ({
 
             {/* SCHEDULE */}
             <section className={sectionClass}>
-              <div className="mb-4 flex items-center gap-2">
-                <FiClock className="text-[#0095D9]" size={20} />
-                <h3 className="font-bold text-gray-900 dark:text-white">
-                  Event Schedule
-                </h3>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <FiClock className="text-[#0095D9]" size={20} />
+                  <h3 className="font-bold text-gray-900 dark:text-white">
+                    Event Schedule
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCalendarOpen(true)}
+                  disabled={!selectedVenue}
+                  title={
+                    selectedVenue
+                      ? "See which dates are already booked"
+                      : "Select a venue first"
+                  }
+                  className="flex items-center gap-1.5 rounded-xl border border-[#0095D9]/30 px-3 py-2 text-xs font-semibold text-[#00679E] transition hover:bg-[#0095D9]/10 disabled:cursor-not-allowed disabled:opacity-40 dark:text-[#38BDF8]"
+                >
+                  <FiCalendar size={14} />
+                  View venue calendar
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>
-                    Start Date <span className="text-red-500">*</span>
-                  </label>
+              <SchedulePicker
+                value={schedule}
+                onChange={handleScheduleChange}
+                occurrences={occurrences}
+                conflictDates={conflictDates}
+                errors={errors}
+                extraMessages={scheduleServerMessages}
+                today={today}
+                disabled={isSubmitting}
+              />
 
-                  <input
-                    type="date"
-                    min={today}
-                    value={formData.date_start}
-                    onChange={(e) => handleChange("date_start", e.target.value)}
-                    className={inputClass}
-                    disabled={isSubmitting}
-                  />
+              {scheduleNote && (
+                <p className="mt-3 rounded-xl bg-[#0095D9]/10 px-4 py-2.5 text-xs text-[#00679E] dark:text-[#38BDF8]">
+                  {scheduleNote}
+                </p>
+              )}
 
-                  <ErrorMessage message={errors.date_start} />
-                </div>
-
-                <div>
-                  <label className={labelClass}>
-                    End Date <span className="text-red-500">*</span>
-                  </label>
-
-                  <input
-                    type="date"
-                    min={formData.date_start || today}
-                    value={formData.date_end}
-                    onChange={(e) => handleChange("date_end", e.target.value)}
-                    className={inputClass}
-                    disabled={isSubmitting}
-                  />
-
-                  <ErrorMessage message={errors.date_end} />
-                </div>
-
-                <div>
-                  <label className={labelClass}>
-                    Start Time <span className="text-red-500">*</span>
-                  </label>
-
-                  <input
-                    type="time"
-                    value={formData.time_start}
-                    onChange={(e) => handleChange("time_start", e.target.value)}
-                    className={inputClass}
-                    disabled={isSubmitting}
-                  />
-
-                  <ErrorMessage message={errors.time_start} />
-                </div>
-
-                <div>
-                  <label className={labelClass}>
-                    End Time <span className="text-red-500">*</span>
-                  </label>
-
-                  <input
-                    type="time"
-                    value={formData.time_end}
-                    onChange={(e) => handleChange("time_end", e.target.value)}
-                    className={inputClass}
-                    disabled={isSubmitting}
-                  />
-
-                  <ErrorMessage message={errors.time_end} />
-                </div>
-              </div>
-
-              {totalDays > 0 && (
-                <div className="mt-4 rounded-xl bg-[#0095D9]/10 px-4 py-3 text-sm text-[#00679E] dark:text-[#38BDF8]">
-                  Total duration:{" "}
-                  <strong>
-                    {totalDays} {totalDays === 1 ? "day" : "days"}
-                  </strong>
+              {/* AVAILABILITY STATUS */}
+              {selectedVenue && scheduleReady && (
+                <div className="mt-4 space-y-4">
+                  {checking ? (
+                    <p className="text-xs text-gray-400">
+                      Checking venue availability...
+                    </p>
+                  ) : conflicts.length === 0 ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950/20 dark:text-green-300">
+                      <FiCheckCircle className="shrink-0" />
+                      The venue is free on all {occurrences.length}{" "}
+                      {occurrences.length === 1 ? "date" : "dates"}.
+                    </div>
+                  ) : (
+                    <ScheduleConflictPanel
+                      conflicts={conflicts}
+                      suggestions={suggestions}
+                      onPickAlternative={handlePickAlternative}
+                      onOpenCalendar={() => setCalendarOpen(true)}
+                    />
+                  )}
                 </div>
               )}
             </section>
@@ -794,23 +878,6 @@ const EventBookingForm = ({
               </div>
             </section>
 
-            {availabilityMessage && (
-              <div
-                className={`rounded-xl border p-4 text-sm ${
-                  slotAvailable
-                    ? "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/20 dark:text-green-300"
-                    : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/20 dark:text-red-300"
-                }`}
-              >
-                <p className="font-semibold">{availabilityMessage}</p>
-                {availabilityConflicts.map((conflict, index) => (
-                  <p key={`${conflict.id ?? "hidden"}-${index}`} className="mt-1 text-xs">
-                    {conflict.purpose ?? "Reserved"} · {conflict.date_start} {conflict.time_start} - {conflict.date_end} {conflict.time_end}
-                  </p>
-                ))}
-              </div>
-            )}
-
             {/* NOTICE */}
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/10 dark:text-amber-300">
               <p className="font-semibold">{notice.title}</p>
@@ -831,7 +898,12 @@ const EventBookingForm = ({
 
             <button
               type="submit"
-              disabled={isSubmitting || !hasSelectableVenue || !slotAvailable}
+              disabled={
+                isSubmitting ||
+                !hasSelectableVenue ||
+                checking ||
+                conflicts.length > 0
+              }
               className="flex items-center justify-center gap-2 rounded-xl bg-[#00679E] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#003B5C] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FiSave size={16} />
@@ -840,6 +912,17 @@ const EventBookingForm = ({
           </div>
         </form>
       </div>
+
+      {/* VENUE CALENDAR POP-UP */}
+      {calendarOpen && selectedVenue && (
+        <VenueCalendarModal
+          venueId={selectedVenue.venue_id}
+          venueName={selectedVenue.venue}
+          excludeBookingId={booking?.event_booking_id}
+          initialDate={conflicts[0]?.date ?? occurrences[0]?.date}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
     </div>
   );
 };

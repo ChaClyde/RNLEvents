@@ -15,13 +15,16 @@ import {
 import type { EventBookingColumns } from "../../../interfaces/EventBookingColumns";
 import {
   EVENT_APPROVAL_PIPELINE,
-  formatDateRange,
-  formatTime,
   getApprovalStageLabel,
   getLifecycleLabel,
   getStatusLabel,
   getStatusStyle,
 } from "../../../interfaces/EventBookingHelpers";
+import {
+  formatShortDate,
+  getScheduleSummary,
+  groupSchedules,
+} from "../../../interfaces/EventBookingSchedule";
 
 interface EventBookingViewProps {
   booking: EventBookingColumns;
@@ -57,6 +60,8 @@ const EventBookingView = ({
 }: EventBookingViewProps) => {
   const resources = booking.resources ?? [];
   const approvals = booking.approvals ?? [];
+  const scheduleSummary = getScheduleSummary(booking);
+  const scheduleGroups = groupSchedules(booking);
   const currentIndex = EVENT_APPROVAL_PIPELINE.findIndex(
     (stage) => stage === booking.approval_stage,
   );
@@ -176,29 +181,43 @@ const EventBookingView = ({
               Event Schedule
             </h3>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <p className={labelClass}>Date</p>
-                <p className={valueClass}>
-                  {formatDateRange(booking.date_start, booking.date_end)}
-                </p>
+                <p className={labelClass}>Pattern</p>
+                <p className={valueClass}>{scheduleSummary.dateText}</p>
               </div>
 
               <div>
-                <p className={labelClass}>Time</p>
+                <p className={labelClass}>Total</p>
                 <p className={valueClass}>
-                  {formatTime(booking.time_start)} -{" "}
-                  {formatTime(booking.time_end)}
+                  {scheduleSummary.count}{" "}
+                  {scheduleSummary.count === 1 ? "date" : "dates"}
                 </p>
               </div>
+            </div>
 
-              <div>
-                <p className={labelClass}>Duration</p>
-                <p className={valueClass}>
-                  {booking.number_of_days}{" "}
-                  {booking.number_of_days === 1 ? "day" : "days"}
-                </p>
-              </div>
+            <div className="space-y-3">
+              {scheduleGroups.map((group) => (
+                <div
+                  key={group.label}
+                  className="rounded-xl border border-gray-100 p-3 dark:border-gray-800"
+                >
+                  <p className="text-sm font-semibold text-[#00679E] dark:text-[#38BDF8]">
+                    {group.label}
+                  </p>
+
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {group.dates.map((date) => (
+                      <span
+                        key={date}
+                        className="rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                      >
+                        {formatShortDate(date)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 

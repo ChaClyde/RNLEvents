@@ -7,44 +7,38 @@ interface DashboardSectionProps {
 const statusClass = (status?: string | null) => {
   switch (status) {
     case "approved":
-      return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
+      return "bg-success-soft text-success";
     case "rejected":
-      return "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200";
+      return "bg-danger-soft text-danger";
     case "cancelled":
-      return "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200";
+      return "bg-page text-muted";
     case "pending":
-      return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200";
+      return "bg-accent-soft text-[#6b4e00]";
     default:
-      return "bg-[#0095D9]/10 text-[#1E3A5F] dark:text-sky-200";
+      return "bg-primary-soft text-primary";
   }
 };
 
 const DashboardSection = ({ section }: DashboardSectionProps) => {
   return (
-    <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-        {section.title}
-      </h2>
+    <section className="rounded-xl border border-line bg-surface p-5">
+      <h2 className="text-base font-semibold text-ink">{section.title}</h2>
       {section.items.length === 0 ? (
-        <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
-          Nothing to show right now.
-        </p>
+        <p className="mt-6 text-sm text-muted">Nothing to show right now.</p>
       ) : (
-        <ul className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+        <ul className="mt-4 divide-y divide-line">
           {section.items.map((item) => (
             <li key={`${item.type}-${item.id}-${item.title}`} className="py-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-medium text-slate-800 dark:text-slate-100">
+                  <p className="font-medium text-ink">
                     {item.title ?? "Untitled"}
                   </p>
                   {item.detail && (
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      {item.detail}
-                    </p>
+                    <p className="mt-1 text-sm text-muted">{item.detail}</p>
                   )}
                   {(item.start || item.end) && (
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-muted">
                       {[item.start, item.end].filter(Boolean).join(" → ")}
                     </p>
                   )}

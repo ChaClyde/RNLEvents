@@ -11,12 +11,11 @@ import {
 import EventBookingService from "../../../services/EventBookingService";
 import type { EventBookingColumns } from "../../../interfaces/EventBookingColumns";
 import {
-  formatDateRange,
-  formatTime,
   getStatusLabel,
   getStatusStyle,
   parseApiError,
 } from "../../../interfaces/EventBookingHelpers";
+import { getScheduleSummary } from "../../../interfaces/EventBookingSchedule";
 
 interface EventBookingDeleteProps {
   isOpen: boolean;
@@ -62,6 +61,8 @@ const EventBookingDelete = ({
 
   const holdsSchedule =
     booking.status === "pending" || booking.status === "approved";
+
+  const schedule = getScheduleSummary(booking);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-5">
@@ -133,13 +134,12 @@ const EventBookingDelete = ({
 
               <p className="flex items-center gap-2">
                 <FiCalendar className="shrink-0 text-[#0095D9]" />
-                {formatDateRange(booking.date_start, booking.date_end)}
+                {schedule.dateText}
               </p>
 
               <p className="flex items-center gap-2">
                 <FiClock className="shrink-0 text-[#0095D9]" />
-                {formatTime(booking.time_start)} -{" "}
-                {formatTime(booking.time_end)}
+                {schedule.timeText}
               </p>
 
               <p className="flex items-center gap-2">

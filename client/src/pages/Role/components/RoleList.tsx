@@ -260,6 +260,8 @@ const RoleList: React.FC<RoleListProps> = ({
       },
       headStyles: {
         fontStyle: "bold",
+        fillColor: [29, 78, 216], // FCU primary blue
+        textColor: [255, 255, 255],
       },
     });
 
@@ -287,11 +289,9 @@ const RoleList: React.FC<RoleListProps> = ({
       {/* HEADER */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-            Role Management
-          </h2>
+          <h2 className="text-xl font-bold text-ink">Role Management</h2>
 
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <p className="mt-1 text-sm text-muted">
             Manage system roles and their assigned users.
           </p>
         </div>
@@ -301,7 +301,7 @@ const RoleList: React.FC<RoleListProps> = ({
             type="button"
             onClick={handleExportPDF}
             disabled={filteredRoles.length === 0}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            className="inline-flex items-center gap-2 rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-ink transition hover:bg-primary-soft hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download size={16} />
             Export PDF
@@ -311,7 +311,7 @@ const RoleList: React.FC<RoleListProps> = ({
             <button
               type="button"
               onClick={onAdd}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#00679E] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#00547F]"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary transition hover:bg-primary-hover"
             >
               <Plus size={16} />
               Add Role
@@ -355,7 +355,7 @@ const RoleList: React.FC<RoleListProps> = ({
 
       {/* LOAD ERROR */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+        <div className="rounded-xl border border-danger/20 bg-danger-soft p-4 text-sm text-danger">
           <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
             <span>{error}</span>
 
@@ -372,7 +372,7 @@ const RoleList: React.FC<RoleListProps> = ({
 
       {/* STATUS ACTION ERROR */}
       {statusActionError && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/20 bg-danger-soft p-4 text-sm text-danger">
           <span>{statusActionError}</span>
 
           <button
@@ -387,11 +387,11 @@ const RoleList: React.FC<RoleListProps> = ({
       )}
 
       {/* FILTERS */}
-      <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:flex-row">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 md:flex-row">
         <div className="relative flex-1">
           <Search
             size={18}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
           />
 
           <input
@@ -399,7 +399,7 @@ const RoleList: React.FC<RoleListProps> = ({
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search role name, slug, or description..."
-            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 outline-none transition focus:border-[#00679E] focus:ring-2 focus:ring-[#00679E]/20 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+            className="w-full rounded-lg border border-line bg-surface py-2 pl-10 pr-4 text-sm text-ink outline-none transition placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/30"
           />
         </div>
 
@@ -408,7 +408,7 @@ const RoleList: React.FC<RoleListProps> = ({
           onChange={(event) =>
             setStatusFilter(event.target.value as "all" | RoleStatus)
           }
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 outline-none focus:border-[#00679E] dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+          className="rounded-lg border border-line bg-surface px-4 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
         >
           <option value="all">All Statuses</option>
           <option value="active">Active</option>
@@ -420,7 +420,7 @@ const RoleList: React.FC<RoleListProps> = ({
           onChange={(event) =>
             setTypeFilter(event.target.value as "all" | "system" | "custom")
           }
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 outline-none focus:border-[#00679E] dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+          className="rounded-lg border border-line bg-surface px-4 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
         >
           <option value="all">All Types</option>
           <option value="system">System Roles</option>
@@ -429,16 +429,14 @@ const RoleList: React.FC<RoleListProps> = ({
       </div>
 
       {/* ROLE TABLE */}
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div className="overflow-hidden rounded-xl border border-line bg-surface">
         {filteredRoles.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <Shield size={36} className="mx-auto mb-3 text-gray-400" />
+            <Shield size={36} className="mx-auto mb-3 text-muted" />
 
-            <h3 className="font-semibold text-gray-900 dark:text-white">
-              No roles found
-            </h3>
+            <h3 className="font-semibold text-ink">No roles found</h3>
 
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            <p className="mt-1 text-sm text-muted">
               Try adjusting your search or filters.
             </p>
           </div>
@@ -446,7 +444,7 @@ const RoleList: React.FC<RoleListProps> = ({
           <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1000px] text-left text-sm">
-                <thead className="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                <thead className="bg-page text-xs uppercase text-muted">
                   <tr>
                     <th className="px-5 py-4">Role</th>
                     <th className="px-5 py-4">Slug</th>
@@ -458,7 +456,7 @@ const RoleList: React.FC<RoleListProps> = ({
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                <tbody className="divide-y divide-line">
                   {paginatedRoles.map((role) => {
                     const isUpdating = updatingRoleId === role.role_id;
 
@@ -469,24 +467,24 @@ const RoleList: React.FC<RoleListProps> = ({
                     return (
                       <tr
                         key={role.role_id}
-                        className="transition hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                        className="transition hover:bg-page"
                       >
                         {/* ROLE NAME */}
                         <td className="px-5 py-4">
-                          <div className="font-semibold text-gray-900 dark:text-white">
+                          <div className="font-semibold text-ink">
                             {role.name}
                           </div>
                         </td>
 
                         {/* SLUG */}
                         <td className="px-5 py-4">
-                          <code className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          <code className="rounded bg-page px-2 py-1 text-xs text-muted">
                             {role.slug}
                           </code>
                         </td>
 
                         {/* DESCRIPTION */}
-                        <td className="max-w-[260px] px-5 py-4 text-gray-600 dark:text-gray-400">
+                        <td className="max-w-[260px] px-5 py-4 text-muted">
                           <span className="line-clamp-2">
                             {role.description || "No description"}
                           </span>
@@ -495,19 +493,19 @@ const RoleList: React.FC<RoleListProps> = ({
                         {/* TYPE */}
                         <td className="px-5 py-4">
                           {role.is_system_role ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary">
                               <Lock size={12} />
                               System
                             </span>
                           ) : (
-                            <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                            <span className="inline-flex items-center rounded-full bg-page px-2.5 py-1 text-xs font-medium text-muted">
                               Custom
                             </span>
                           )}
                         </td>
 
                         {/* USERS */}
-                        <td className="px-5 py-4 font-medium text-gray-700 dark:text-gray-300">
+                        <td className="px-5 py-4 font-medium text-ink">
                           {role.users_count ?? 0}
                         </td>
 
@@ -525,7 +523,7 @@ const RoleList: React.FC<RoleListProps> = ({
                               onClick={() => onEdit(role)}
                               title="Edit role"
                               aria-label={`Edit ${role.name}`}
-                              className="rounded-lg p-2 text-blue-600 transition hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
+                              className="rounded-lg p-2 text-primary transition hover:bg-primary-soft"
                             >
                               <Pencil size={16} />
                             </button>
@@ -553,8 +551,8 @@ const RoleList: React.FC<RoleListProps> = ({
                               }
                               className={`rounded-lg p-2 transition disabled:cursor-not-allowed disabled:opacity-40 ${
                                 isActive
-                                  ? "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
-                                  : "text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/40"
+                                  ? "text-[#6b4e00] hover:bg-accent-soft"
+                                  : "text-success hover:bg-success-soft"
                               }`}
                             >
                               {isUpdating ? (
@@ -571,7 +569,7 @@ const RoleList: React.FC<RoleListProps> = ({
                                 onClick={() => onDelete(role)}
                                 title="Move to trash"
                                 aria-label={`Delete ${role.name}`}
-                                className="rounded-lg p-2 text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                className="rounded-lg p-2 text-danger transition hover:bg-danger-soft"
                               >
                                 <Trash2 size={16} />
                               </button>
@@ -586,8 +584,8 @@ const RoleList: React.FC<RoleListProps> = ({
             </div>
 
             {/* PAGINATION */}
-            <div className="flex flex-col justify-between gap-3 border-t border-gray-200 px-5 py-4 dark:border-gray-800 sm:flex-row sm:items-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="flex flex-col justify-between gap-3 border-t border-line px-5 py-4 sm:flex-row sm:items-center">
+              <p className="text-sm text-muted">
                 Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to{" "}
                 {Math.min(currentPage * ITEMS_PER_PAGE, filteredRoles.length)}{" "}
                 of {filteredRoles.length} roles
@@ -598,12 +596,12 @@ const RoleList: React.FC<RoleListProps> = ({
                   type="button"
                   disabled={currentPage <= 1}
                   onClick={() => setCurrentPage((page) => page - 1)}
-                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink transition hover:bg-primary-soft hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Previous
                 </button>
 
-                <span className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="text-sm text-muted">
                   Page {currentPage} of {totalPages}
                 </span>
 
@@ -611,7 +609,7 @@ const RoleList: React.FC<RoleListProps> = ({
                   type="button"
                   disabled={currentPage >= totalPages}
                   onClick={() => setCurrentPage((page) => page + 1)}
-                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink transition hover:bg-primary-soft hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                 </button>
@@ -636,18 +634,14 @@ interface StatCardProps {
 
 const StatCard: React.FC<StatCardProps> = ({ label, value, icon }) => {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex items-center justify-between rounded-xl border border-line bg-surface p-5">
       <div>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
+        <p className="text-sm text-muted">{label}</p>
 
-        <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
-          {value}
-        </p>
+        <p className="mt-1 text-2xl font-bold text-ink">{value}</p>
       </div>
 
-      <div className="rounded-lg bg-[#00679E]/10 p-3 text-[#00679E] dark:text-[#36A9E1]">
-        {icon}
-      </div>
+      <div className="rounded-lg bg-primary-soft p-3 text-primary">{icon}</div>
     </div>
   );
 };

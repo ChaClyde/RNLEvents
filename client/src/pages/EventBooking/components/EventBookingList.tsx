@@ -21,12 +21,11 @@ import {
 import type { EventBookingColumns } from "../../../interfaces/EventBookingColumns";
 import {
   EVENT_STAGE_LABELS,
-  formatDateRange,
-  formatTime,
   getLifecycleLabel,
   getStatusStyle,
   isRequesterEditable,
 } from "../../../interfaces/EventBookingHelpers";
+import { getScheduleSummary } from "../../../interfaces/EventBookingSchedule";
 
 interface EventBookingListProps {
   bookings: EventBookingColumns[];
@@ -85,7 +84,7 @@ const EventBookingList = ({
 
       return matchesSearch && matchesStatus;
     });
-  }, [bookings, search, statusFilter]);
+  }, [bookings, search, statusFilter, isAwaitingReview]);
 
   // ============================================================
   // PAGINATION
@@ -224,6 +223,7 @@ const EventBookingList = ({
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {paginatedBookings.map((booking) => {
             const resources = booking.resources ?? [];
+            const schedule = getScheduleSummary(booking);
 
             return (
               <article
@@ -270,18 +270,16 @@ const EventBookingList = ({
                     </div>
 
                     <p className="pl-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                      {formatDateRange(booking.date_start, booking.date_end)}
+                      {schedule.dateText}
                     </p>
 
                     <div className="flex items-center gap-2 pl-6 text-sm text-gray-500 dark:text-gray-400">
                       <FiClock className="shrink-0 text-[#0095D9]" />
-                      {formatTime(booking.time_start)} -{" "}
-                      {formatTime(booking.time_end)}
+                      {schedule.timeText}
                     </div>
 
                     <p className="pl-6 text-xs text-gray-400">
-                      {booking.number_of_days}{" "}
-                      {booking.number_of_days === 1 ? "day" : "days"}
+                      {schedule.count} {schedule.count === 1 ? "date" : "dates"}
                     </p>
                   </div>
 
