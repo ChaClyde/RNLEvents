@@ -1,5 +1,7 @@
 import { useMemo, useState, type FC } from "react";
+import { Link } from "react-router-dom";
 import {
+  AlertTriangle,
   CheckCircle2,
   Gauge,
   Layers,
@@ -8,17 +10,20 @@ import {
   Search,
   Truck,
   User,
+  Wrench,
 } from "lucide-react";
 
 import Spinner from "../../../components/Spinner/Spinner";
 import type {
+  VehicleAvailabilityStatus,
   VehicleColumns,
-  VehicleStatus,
 } from "../../../interfaces/VehicleColumns";
 import {
+  getAvailabilityNoticeStyle,
+  getVehicleAvailability,
   getVehicleStatusLabel,
   getVehicleStatusStyle,
-  VEHICLE_STATUS_OPTIONS,
+  VEHICLE_AVAILABILITY_OPTIONS,
 } from "../../../interfaces/VehicleHelpers";
 
 interface VehicleListProps {
@@ -41,9 +46,9 @@ const VehicleList: FC<VehicleListProps> = ({
   onRefresh,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | VehicleStatus>(
-    "all",
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | VehicleAvailabilityStatus
+  >("all");
   const [currentPage, setCurrentPage] = useState(1);
 
   const filteredVehicles = useMemo(() => {
@@ -58,14 +63,19 @@ const VehicleList: FC<VehicleListProps> = ({
         (vehicle.person_in_charge ?? "").toLowerCase().includes(query);
 
       const matchesStatus =
-        statusFilter === "all" || vehicle.status === statusFilter;
+        statusFilter === "all" ||
+        getVehicleAvailability(vehicle) === statusFilter;
 
       return matchesSearch && matchesStatus;
     });
   }, [vehicles, searchQuery, statusFilter]);
 
   const availableCount = vehicles.filter(
-    (vehicle) => vehicle.status === "available",
+    (vehicle) => getVehicleAvailability(vehicle) === "available",
+  ).length;
+
+  const maintenanceCount = vehicles.filter(
+    (vehicle) => getVehicleAvailability(vehicle) === "maintenance",
   ).length;
 
   // Keep the page valid when the list shrinks (e.g. after a delete)
@@ -102,19 +112,29 @@ const VehicleList: FC<VehicleListProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onRefresh}
-            className="flex items-center gap-2 rounded-2xl bg-[#0095D9] px-5 py-3 text-sm font-medium text-white transition-all hover:bg-[#003B5C] hover:shadow-lg hover:shadow-[#0095D9]/25"
-          >
-            <RefreshCw size={16} />
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/vehicle-maintenance"
+              className="flex items-center gap-2 rounded-2xl border border-[#0095D9]/30 bg-white px-5 py-3 text-sm font-medium text-[#003B5C] transition-all hover:bg-[#0095D9]/10"
+            >
+              <Wrench size={16} />
+              Maintenance Sheet
+            </Link>
+
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="flex items-center gap-2 rounded-2xl bg-[#0095D9] px-5 py-3 text-sm font-medium text-white transition-all hover:bg-[#003B5C] hover:shadow-lg hover:shadow-[#0095D9]/25"
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-3xl border border-[#0095D9]/20 bg-[#0095D9]/5 p-5">
           <p className="text-sm text-gray-500">Total Vehicles</p>
           <div className="mt-3 flex items-center gap-3">
@@ -131,6 +151,16 @@ const VehicleList: FC<VehicleListProps> = ({
             <CheckCircle2 className="text-green-600" />
             <span className="text-3xl font-bold text-green-700">
               {availableCount}
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm text-gray-500">Under Maintenance</p>
+          <div className="mt-3 flex items-center gap-3">
+            <Wrench className="text-amber-600" />
+            <span className="text-3xl font-bold text-amber-700">
+              {maintenanceCount}
             </span>
           </div>
         </div>
@@ -168,13 +198,15 @@ const VehicleList: FC<VehicleListProps> = ({
         <select
           value={statusFilter}
           onChange={(e) => {
-            setStatusFilter(e.target.value as "all" | VehicleStatus);
+            setStatusFilter(
+              e.target.value as "all" | VehicleAvailabilityStatus,
+            );
             setCurrentPage(1);
           }}
           className="rounded-2xl border border-[#0095D9]/20 bg-white px-4 py-3 text-sm text-gray-700 outline-none focus:border-[#0095D9]"
         >
           <option value="all">All Status</option>
-          {VEHICLE_STATUS_OPTIONS.map((option) => (
+          {VEHICLE_AVAILABILITY_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -204,90 +236,112 @@ const VehicleList: FC<VehicleListProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {paginatedVehicles.map((vehicle) => (
-            <div
-              key={vehicle.vehicle_id}
-              className="overflow-hidden rounded-3xl border border-[#0095D9]/20 bg-white shadow-sm transition hover:shadow-lg"
-            >
-              {/* Big image holder */}
-              <div className="relative h-56 w-full bg-gray-100">
-                {vehicle.image_url ? (
-                  <img
-                    src={vehicle.image_url}
-                    alt={vehicle.vehicle_name}
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-300">
-                    <Truck size={48} />
-                  </div>
-                )}
+          {paginatedVehicles.map((vehicle) => {
+            const availability = getVehicleAvailability(vehicle);
 
-                <span
-                  className={`absolute right-3 top-3 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${getVehicleStatusStyle(
-                    vehicle.status,
-                  )}`}
-                >
-                  {getVehicleStatusLabel(vehicle.status)}
-                </span>
-              </div>
-
-              <div className="p-5">
-                <h3 className="text-lg font-bold text-[#003B5C]">
-                  {vehicle.vehicle_name}
-                </h3>
-
-                <p className="mt-1 text-sm tracking-wide text-gray-500">
-                  Plate No. {vehicle.plate_number}
-                </p>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                  {vehicle.vehicle_type && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#0095D9]/10 px-3 py-1 text-[#0095D9]">
-                      <Gauge size={14} />
-                      {vehicle.vehicle_type}
-                    </span>
+            return (
+              <div
+                key={vehicle.vehicle_id}
+                className="overflow-hidden rounded-3xl border border-[#0095D9]/20 bg-white shadow-sm transition hover:shadow-lg"
+              >
+                {/* Big image holder */}
+                <div className="relative h-56 w-full bg-gray-100">
+                  {vehicle.image_url ? (
+                    <img
+                      src={vehicle.image_url}
+                      alt={vehicle.vehicle_name}
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-gray-300">
+                      <Truck size={48} />
+                    </div>
                   )}
 
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#003B5C]/10 px-3 py-1 text-[#003B5C]">
-                    <Truck size={14} />
-                    {vehicle.capacity} seats
+                  <span
+                    className={`absolute right-3 top-3 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${getVehicleStatusStyle(
+                      availability,
+                    )}`}
+                  >
+                    {getVehicleStatusLabel(availability)}
                   </span>
                 </div>
 
-                {vehicle.seating_notes && (
-                  <p className="mt-2 text-xs text-gray-400">
-                    {vehicle.seating_notes}
-                  </p>
-                )}
+                <div className="p-5">
+                  <h3 className="text-lg font-bold text-[#003B5C]">
+                    {vehicle.vehicle_name}
+                  </h3>
 
-                {vehicle.person_in_charge && (
-                  <p className="mt-3 flex items-center gap-2 text-sm text-gray-500">
-                    <User size={14} className="shrink-0 text-[#0095D9]" />
-                    <span className="truncate">{vehicle.person_in_charge}</span>
+                  <p className="mt-1 text-sm tracking-wide text-gray-500">
+                    Plate No. {vehicle.plate_number}
                   </p>
-                )}
 
-                <div className="mt-5 flex gap-2 border-t border-[#0095D9]/10 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => onEditVehicle(vehicle)}
-                    className="flex-1 rounded-lg border border-[#0095D9]/30 bg-[#0095D9]/10 px-3 py-2 text-sm font-medium text-[#0095D9] hover:bg-[#0095D9]/20"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteVehicle(vehicle)}
-                    className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
-                  >
-                    Delete
-                  </button>
+                  <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                    {vehicle.vehicle_type && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#0095D9]/10 px-3 py-1 text-[#0095D9]">
+                        <Gauge size={14} />
+                        {vehicle.vehicle_type}
+                      </span>
+                    )}
+
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#003B5C]/10 px-3 py-1 text-[#003B5C]">
+                      <Truck size={14} />
+                      {vehicle.capacity} seats
+                    </span>
+                  </div>
+
+                  {vehicle.seating_notes && (
+                    <p className="mt-2 text-xs text-gray-400">
+                      {vehicle.seating_notes}
+                    </p>
+                  )}
+
+                  {vehicle.person_in_charge && (
+                    <p className="mt-3 flex items-center gap-2 text-sm text-gray-500">
+                      <User size={14} className="shrink-0 text-[#0095D9]" />
+                      <span className="truncate">
+                        {vehicle.person_in_charge}
+                      </span>
+                    </p>
+                  )}
+
+                  {/* Why the vehicle is not available, or an upcoming heads-up */}
+                  {vehicle.availability_message && (
+                    <div
+                      className={`mt-4 flex items-start gap-2 rounded-xl border p-3 text-xs ${getAvailabilityNoticeStyle(
+                        availability,
+                      )}`}
+                    >
+                      {availability === "unavailable" ? (
+                        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                      ) : (
+                        <Wrench size={14} className="mt-0.5 shrink-0" />
+                      )}
+                      <p>{vehicle.availability_message}</p>
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex gap-2 border-t border-[#0095D9]/10 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => onEditVehicle(vehicle)}
+                      className="flex-1 rounded-lg border border-[#0095D9]/30 bg-[#0095D9]/10 px-3 py-2 text-sm font-medium text-[#0095D9] hover:bg-[#0095D9]/20"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteVehicle(vehicle)}
+                      className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

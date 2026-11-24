@@ -248,6 +248,10 @@ const VehicleFormFields: FC<VehicleFormFieldsProps> = ({
             ))}
           </select>
 
+          <p className="mt-1 text-xs text-gray-400">
+            Available, Unavailable, and Under Maintenance update the booking list and the schedule calendar.
+          </p>
+
           {errors.status && (
             <p className="mt-1 text-xs text-red-500">{errors.status[0]}</p>
           )}

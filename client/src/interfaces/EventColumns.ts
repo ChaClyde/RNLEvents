@@ -1,8 +1,16 @@
 import type { VenueColumns } from "./VenueColumns";
 import type { OfficeColumns } from "./OfficeColumns";
 
+export interface EventLetter {
+  attachment_id: number;
+  original_filename: string;
+  mime_type?: string | null;
+}
+
 export interface EventColumns {
   event_id: number;
+  event_booking_id?: number | null;
+  approved_at?: string | null;
   purpose: string;
   venue_id: number;
   venue: VenueColumns;
@@ -23,6 +31,7 @@ export interface EventColumns {
   office: OfficeColumns;
   email: string;
   tel_number: string;
+  letters?: EventLetter[];
   is_deleted: boolean;
   created_at: string;
   updated_at: string;

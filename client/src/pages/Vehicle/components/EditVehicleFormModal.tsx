@@ -1,5 +1,5 @@
 import { useEffect, useState, type FC, type FormEvent } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Wrench } from "lucide-react";
 
 import Modal from "../../../components/Modal";
 import CloseButton from "../../../components/Button/CloseButton";
@@ -20,6 +20,7 @@ import VehicleFormFields, {
   VehicleFormError,
   VehiclePhotoPicker,
 } from "./VehicleFormFields";
+import VehicleMaintenanceSection from "./VehicleMaintenanceSection";
 
 interface EditVehicleFormModalProps {
   vehicle: VehicleColumns | null;
@@ -125,6 +126,16 @@ const EditVehicleFormModal: FC<EditVehicleFormModalProps> = ({
 
         <VehicleFormError message={serverError} />
 
+        {vehicle.availability_message && (
+          <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <Wrench size={18} className="mt-0.5 shrink-0" />
+            <p>
+              {vehicle.availability_message} Maintenance is managed from the
+              Maintenance Sheet, not this form.
+            </p>
+          </div>
+        )}
+
         <VehiclePhotoPicker
           inputId="edit_vehicle_image"
           file={image}
@@ -139,6 +150,11 @@ const EditVehicleFormModal: FC<EditVehicleFormModalProps> = ({
           values={form}
           errors={errors}
           onChange={handleChange}
+        />
+
+        <VehicleMaintenanceSection
+          vehicleId={vehicle.vehicle_id}
+          onChanged={refreshKey}
         />
 
         {/* Footer */}

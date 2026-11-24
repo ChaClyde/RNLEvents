@@ -228,23 +228,39 @@ export const buildSchedulePayload = (
   };
 };
 
+export const MINIMUM_ADVANCE_DAYS = 2;
+
+export const ADVANCE_BOOKING_MESSAGE =
+  "Book at least 2 days before the event. Same-day and next-day bookings are not allowed.";
+
+export const earliestBookingDate = (today: string): string => {
+  const parsed = new Date(`${today.slice(0, 10)}T00:00:00`);
+  parsed.setDate(parsed.getDate() + MINIMUM_ADVANCE_DAYS);
+
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+
+  return `${parsed.getFullYear()}-${month}-${day}`;
+};
+
 export const validateSchedule = (
   s: ScheduleState,
   occurrences: Occurrence[],
   today: string,
 ): Record<string, string> => {
   const errors: Record<string, string> = {};
+  const earliest = earliestBookingDate(today);
 
   if (s.type === "custom") {
     if (s.customDates.length === 0) {
       errors.schedule = "Add at least one date.";
-    } else if (s.customDates.some((d) => d < today)) {
-      errors.schedule = "Dates cannot be in the past.";
+    } else if (s.customDates.some((d) => d < earliest)) {
+      errors.schedule = ADVANCE_BOOKING_MESSAGE;
     }
   } else {
     if (!s.date_start) errors.date_start = "Start date is required.";
-    else if (s.date_start < today)
-      errors.date_start = "Start date cannot be in the past.";
+    else if (s.date_start < earliest)
+      errors.date_start = ADVANCE_BOOKING_MESSAGE;
 
     if (!s.date_end) errors.date_end = "End date is required.";
     else if (s.date_start && s.date_end < s.date_start)
@@ -268,12 +284,62 @@ export const validateSchedule = (
     errors.schedule = `A booking can have at most ${MAX_OCCURRENCES} dates.`;
   }
 
+  const soon = occurrences.find((item) => item.date < earliest);
+  if (soon && !errors.date_start && !errors.schedule) {
+    errors.date_start = ADVANCE_BOOKING_MESSAGE;
+  }
+
   const bad = occurrences.find((o) => o.time_end <= o.time_start);
   if (bad) {
     errors.time_end = `End time must be later than start time on ${formatShortDate(bad.date)}.`;
   }
 
   return errors;
+};
+
+export const bookingWindowError = (
+  occurrences: Occurrence[],
+  gym: boolean,
+): string => {
+  if (gym) return "";
+
+  const outside = occurrences.find(
+    (item) => item.time_start < "07:00" || item.time_end > "22:00",
+  );
+
+  if (!outside) return "";
+
+  return `Bookings are only allowed from 7:00 AM to 10:00 PM. ${formatShortDate(outside.date)} is outside that time.`;
+};
+
+export const maintenanceBookingError = (
+  maintenance:
+    | {
+        status?: string;
+        date_start: string;
+        date_end: string;
+        reason: string;
+        range_label?: string;
+      }[]
+    | undefined,
+  occurrences: Occurrence[],
+): string => {
+  const hit = (maintenance ?? []).find((row) => {
+    if (row.status && row.status !== "scheduled") return false;
+
+    const start = row.date_start.slice(0, 10);
+    const end = row.date_end.slice(0, 10);
+
+    return occurrences.some((item) => item.date >= start && item.date <= end);
+  });
+
+  if (!hit) return "";
+
+  const when =
+    hit.range_label ??
+    `${hit.date_start.slice(0, 10)} to ${hit.date_end.slice(0, 10)}`;
+
+  return `This venue is under scheduled maintenance (${hit.reason}) ${when} and cannot be booked.`;
 };
 
 // ------------------------------------------------------------

@@ -54,6 +54,34 @@ const VenueService = {
   removeVenueImage: async (venue_id: string | number) => {
     return await AxiosInstance.delete(`/venues/removeVenueImage/${venue_id}`);
   },
+
+  loadRates: async (venue_id: string | number) => {
+    return await AxiosInstance.get(`/venues/${venue_id}/rates`);
+  },
+
+  storeRate: async (venue_id: string | number, data: Record<string, unknown>) => {
+    return await AxiosInstance.post(`/venues/${venue_id}/rates`, data);
+  },
+
+  updateRate: async (
+    venue_id: string | number,
+    venue_rate_id: string | number,
+    data: Record<string, unknown>,
+  ) => {
+    return await AxiosInstance.put(
+      `/venues/${venue_id}/rates/${venue_rate_id}`,
+      data,
+    );
+  },
+
+  deleteRate: async (
+    venue_id: string | number,
+    venue_rate_id: string | number,
+  ) => {
+    return await AxiosInstance.delete(
+      `/venues/${venue_id}/rates/${venue_rate_id}`,
+    );
+  },
 };
 
 export default VenueService;

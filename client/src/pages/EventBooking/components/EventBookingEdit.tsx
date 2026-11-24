@@ -5,7 +5,9 @@ import type {
 import type { VenueColumns } from "../../../interfaces/VenueColumns";
 import type { OfficeColumns } from "../../../interfaces/OfficeColumns";
 
-import EventBookingForm from "./EventBookingForm";
+import EventBookingForm, {
+  type EventBookingAttachmentDraft,
+} from "./EventBookingForm";
 
 interface EventBookingEditProps {
   booking: EventBookingColumns;
@@ -16,8 +18,10 @@ interface EventBookingEditProps {
   onSubmit: (
     event_booking_id: number,
     data: EventBookingFormData,
+    attachment: EventBookingAttachmentDraft,
   ) => Promise<void>;
   isSubmitting?: boolean;
+  uploadProgress?: number | null;
 }
 
 const EventBookingEdit = ({
@@ -27,6 +31,7 @@ const EventBookingEdit = ({
   onClose,
   onSubmit,
   isSubmitting = false,
+  uploadProgress = null,
 }: EventBookingEditProps) => {
   return (
     <EventBookingForm
@@ -43,8 +48,11 @@ const EventBookingEdit = ({
       venues={venues}
       offices={offices}
       onClose={onClose}
-      onSubmit={(data) => onSubmit(booking.event_booking_id, data)}
+      onSubmit={(data, attachment) =>
+        onSubmit(booking.event_booking_id, data, attachment)
+      }
       isSubmitting={isSubmitting}
+      uploadProgress={uploadProgress}
     />
   );
 };

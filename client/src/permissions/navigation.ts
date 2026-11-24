@@ -93,7 +93,11 @@ export const sidebarNavigation: SidebarNavItem[] = [
   {
     id: "vehicle_management",
     text: "Vehicle Management",
-    abilities: [Permission.VEHICLES_VIEW, Permission.DRIVERS_VIEW],
+    abilities: [
+      Permission.VEHICLES_VIEW,
+      Permission.DRIVERS_VIEW,
+      Permission.VEHICLE_BOOKINGS_VIEW,
+    ],
     children: [
       {
         id: "vehicles",
@@ -108,10 +112,13 @@ export const sidebarNavigation: SidebarNavItem[] = [
         abilities: [Permission.DRIVERS_VIEW],
       },
       {
-        id: "vehicle-list",
-        text: "Vehicle List",
-        path: "/vehicle-list",
-        abilities: [Permission.VEHICLES_VIEW],
+        id: "trips",
+        text: "Trip List",
+        path: "/trips",
+        abilities: [
+          Permission.VEHICLES_VIEW,
+          Permission.VEHICLE_BOOKINGS_VIEW,
+        ],
       },
     ],
   },
@@ -174,8 +181,8 @@ export const sidebarNavigation: SidebarNavItem[] = [
   },
   {
     id: "system_history",
-    text: "System History",
-    path: "/system-history",
+    text: "Booking History",
+    path: "/booking-history",
     abilities: [Permission.SYSTEM_HISTORY_VIEW],
   },
   {

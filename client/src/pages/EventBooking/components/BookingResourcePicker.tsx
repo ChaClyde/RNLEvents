@@ -1,4 +1,4 @@
-import { FiAlertCircle, FiPackage, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiAlertCircle, FiPackage } from "react-icons/fi";
 
 import type {
   VenueColumns,
@@ -121,31 +121,7 @@ const BookingResourcePicker = ({
     );
   };
 
-  // ------------------------------------------------------------
-  // OTHER EQUIPMENT (not on the venue's list)
-  // ------------------------------------------------------------
-
-  const addCustom = () => {
-    onChange([
-      ...value,
-      { resource_id: null, resource_name: "", quantity: 1, notes: null },
-    ]);
-  };
-
-  const updateCustom = (
-    index: number,
-    patch: Partial<EventBookingResourceInput>,
-  ) => {
-    onChange(
-      value.map((item, i) => (i === index ? { ...item, ...patch } : item)),
-    );
-  };
-
-  const removeCustom = (index: number) => {
-    onChange(value.filter((_, i) => i !== index));
-  };
-
-  const selectedCount = value.length;
+  const selectedCount = value.filter((item) => item.resource_id !== null).length;
 
   // ------------------------------------------------------------
   // RENDER
@@ -177,8 +153,7 @@ const BookingResourcePicker = ({
 
       {venueResources.length === 0 && (
         <div className="rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-          This venue has no resources on record. You can still list other
-          equipment below.
+          This venue has no resources on record.
         </div>
       )}
 
@@ -318,101 +293,6 @@ const BookingResourcePicker = ({
                   </div>
                 )}
               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Other equipment */}
-      <div className="space-y-2.5 border-t border-gray-100 pt-4 dark:border-gray-800">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-gray-800 dark:text-white">
-              Other equipment
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              For items that are not on the venue's list. These are not checked
-              against the venue's inventory.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={addCustom}
-            disabled={disabled}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-[#003B5C] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#00679E] disabled:opacity-50"
-          >
-            <FiPlus />
-            Add item
-          </button>
-        </div>
-
-        {value.map((item, index) => {
-          if (item.resource_id !== null) return null;
-
-          const nameInvalid = showErrors && !item.resource_name.trim();
-          const quantityInvalid = showErrors && item.quantity < 1;
-
-          return (
-            <div
-              key={`custom-${index}`}
-              className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:grid-cols-[1fr_8rem_auto] dark:border-gray-700 dark:bg-gray-800/40"
-            >
-              <div>
-                <input
-                  type="text"
-                  value={item.resource_name}
-                  onChange={(e) =>
-                    updateCustom(index, { resource_name: e.target.value })
-                  }
-                  placeholder="Equipment name"
-                  maxLength={100}
-                  disabled={disabled}
-                  className={`${inputClass} ${nameInvalid ? "border-red-400" : ""}`}
-                />
-
-                {nameInvalid && (
-                  <p className="mt-1 text-xs text-red-500">Name is required.</p>
-                )}
-              </div>
-
-              <div>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={item.quantity === 0 ? "" : item.quantity}
-                  onChange={(e) => {
-                    const quantity = Math.floor(Number(e.target.value));
-
-                    updateCustom(index, {
-                      quantity:
-                        Number.isFinite(quantity) && quantity > 0
-                          ? quantity
-                          : 0,
-                    });
-                  }}
-                  placeholder="Qty"
-                  disabled={disabled}
-                  className={`${inputClass} ${
-                    quantityInvalid ? "border-red-400" : ""
-                  }`}
-                />
-
-                {quantityInvalid && (
-                  <p className="mt-1 text-xs text-red-500">Min. 1.</p>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => removeCustom(index)}
-                disabled={disabled}
-                aria-label="Remove item"
-                className="flex items-center justify-center rounded-xl px-3 py-2 text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-900/20"
-              >
-                <FiTrash2 />
-              </button>
             </div>
           );
         })}

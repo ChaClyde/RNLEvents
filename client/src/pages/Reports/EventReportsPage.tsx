@@ -4,7 +4,11 @@ import { BarChart3, FileDown, FileSpreadsheet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Permission } from "../../permissions";
 import { usePermissions } from "../../hooks/usePermissions";
-import { downloadReportResponse } from "../../services/downloadReport";
+import {
+  downloadReportResponse,
+  printReportResponse,
+} from "../../services/downloadReport";
+import { periodRange, todayIso, type PeriodKind } from "./reportPeriod";
 import EventReportService, {
   type EventReportBookingRow,
   type EventReportCard,
@@ -18,9 +22,12 @@ import DashboardChart from "../Dashboard/components/DashboardChart";
 import DashboardSkeleton from "../Dashboard/components/DashboardSkeleton";
 import StatCard from "../Dashboard/components/StatCard";
 
+const openingDay = todayIso();
+const openingRange = periodRange("daily", openingDay);
+
 const emptyFilters: EventReportFilters = {
-  start_date: "",
-  end_date: "",
+  start_date: openingRange.start,
+  end_date: openingRange.end,
   status: "",
   office_id: "",
   venue_id: "",
@@ -30,6 +37,7 @@ const emptyFilters: EventReportFilters = {
   per_page: 10,
   sort: "date_start",
   direction: "desc",
+  report: "daily",
 };
 
 const EventReportsPage = () => {
@@ -55,8 +63,11 @@ const EventReportsPage = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | "excel" | "print" | null>(null);
   const [exportError, setExportError] = useState("");
+  const [anchor, setAnchor] = useState(openingDay);
+  const [officeSort, setOfficeSort] = useState<"total" | "name">("total");
+  const [venueSort, setVenueSort] = useState<"bookings" | "name">("bookings");
 
   const queryFilters = useMemo(() => {
     const { page, per_page, sort, direction, ...rest } = applied;
@@ -115,8 +126,17 @@ const EventReportsPage = () => {
   };
 
   const resetFilters = () => {
-    setFilters(emptyFilters);
-    setApplied(emptyFilters);
+    const day = todayIso();
+    setAnchor(day);
+    const range = periodRange("daily", day);
+    const next = {
+      ...emptyFilters,
+      start_date: range.start,
+      end_date: range.end,
+      report: "daily" as const,
+    };
+    setFilters(next);
+    setApplied(next);
   };
 
   const exportFilters = useMemo(() => {
@@ -124,7 +144,20 @@ const EventReportsPage = () => {
     return rest;
   }, [applied]);
 
-  const exportReport = async (format: "pdf" | "excel") => {
+  const applyPeriod = (report: PeriodKind, day: string, source = filters) => {
+    const range = periodRange(report, day);
+    const next = {
+      ...source,
+      report,
+      start_date: range.start,
+      end_date: range.end,
+      page: 1,
+    };
+    setFilters(next);
+    setApplied(next);
+  };
+
+  const exportReport = async (format: "pdf" | "excel" | "print") => {
     if (exporting) {
       return;
     }
@@ -133,17 +166,23 @@ const EventReportsPage = () => {
     setExportError("");
 
     try {
-      const response =
-        format === "pdf"
-          ? await EventReportService.exportPdf(exportFilters)
-          : await EventReportService.exportExcel(exportFilters);
-
-      await downloadReportResponse(
-        response,
-        `FilSched-Event-Report.${format === "pdf" ? "pdf" : "xlsx"}`,
+      if (format === "excel") {
+        const excel = await EventReportService.exportExcel(exportFilters);
+        await downloadReportResponse(excel, "FilSched-Event-Report.xlsx");
+        return;
+      }
+      const response = await EventReportService.exportPdf(exportFilters);
+      if (format === "print") {
+        await printReportResponse(response);
+        return;
+      }
+      await downloadReportResponse(response, "FilSched-Event-Report.pdf");
+    } catch (err) {
+      setExportError(
+        err instanceof Error
+          ? err.message
+          : "Unable to export the event report. Please try again.",
       );
-    } catch {
-      setExportError("Unable to export the event report. Please try again.");
     } finally {
       setExporting(null);
     }
@@ -158,6 +197,28 @@ const EventReportsPage = () => {
       page: 1,
     }));
   };
+
+  const reportKind = (applied.report || "daily") as PeriodKind;
+  const sortedOffices = useMemo(() => {
+    const rows = [...offices];
+    rows.sort((left, right) =>
+      officeSort === "name"
+        ? left.office_name.localeCompare(right.office_name)
+        : right.total - left.total || left.office_name.localeCompare(right.office_name),
+    );
+    return rows;
+  }, [offices, officeSort]);
+  const venueRows = useMemo(() => {
+    const rows = [...(venues?.ranked ?? venues?.most_frequent ?? [])];
+    rows.sort((left, right) =>
+      venueSort === "name"
+        ? left.label.localeCompare(right.label)
+        : right.value - left.value || left.label.localeCompare(right.label),
+    );
+    return rows;
+  }, [venues, venueSort]);
+  const topOffice = [...offices].sort((left, right) => right.total - left.total)[0];
+  const topVenue = venues?.most_frequent?.[0];
 
   if (!can(Permission.REPORTS_VIEW) || !canOpenEventReports) {
     return (
@@ -191,11 +252,19 @@ const EventReportsPage = () => {
               Event Reports & Analytics
             </h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Live event booking statistics from FilSched records.
+              Daily, weekly, and monthly event bookings by department and venue.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void exportReport("print")}
+            disabled={!!exporting}
+            className="inline-flex items-center gap-2 rounded-xl border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] disabled:opacity-60 dark:border-slate-600 dark:text-white"
+          >
+            {exporting === "print" ? "Preparing print..." : "Print"}
+          </button>
           <button
             type="button"
             onClick={() => void exportReport("pdf")}
@@ -223,22 +292,47 @@ const EventReportsPage = () => {
       ) : null}
 
       <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <div className="mb-4 flex flex-wrap gap-2">
+          {(
+            [
+              ["daily", "Daily report"],
+              ["weekly", "Weekly report"],
+              ["monthly", "Monthly report"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => applyPeriod(value, anchor)}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                reportKind === value
+                  ? "bg-[#1E3A5F] text-white"
+                  : "border border-[#1E3A5F]/20 text-[#1E3A5F] dark:border-slate-600 dark:text-slate-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+          {applied.start_date} to {applied.end_date}
+        </p>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="text-sm text-slate-600 dark:text-slate-300">
-            Start date
+            {reportKind === "monthly" ? "Month" : reportKind === "weekly" ? "Week containing" : "Day"}
             <input
-              type="date"
-              value={filters.start_date ?? ""}
-              onChange={(event) => updateFilter("start_date", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-[#1E3A5F]/20 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-            />
-          </label>
-          <label className="text-sm text-slate-600 dark:text-slate-300">
-            End date
-            <input
-              type="date"
-              value={filters.end_date ?? ""}
-              onChange={(event) => updateFilter("end_date", event.target.value)}
+              type={reportKind === "monthly" ? "month" : "date"}
+              value={reportKind === "monthly" ? anchor.slice(0, 7) : anchor}
+              onChange={(event) => {
+                const value =
+                  reportKind === "monthly" && event.target.value
+                    ? `${event.target.value}-01`
+                    : event.target.value;
+                setAnchor(value);
+                if (value) {
+                  applyPeriod(reportKind, value);
+                }
+              }}
               className="mt-1 w-full rounded-xl border border-[#1E3A5F]/20 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             />
           </label>
@@ -367,33 +461,70 @@ const EventReportsPage = () => {
           </div>
 
           {trends && (
-            <div className="grid gap-4 xl:grid-cols-2">
-              <DashboardChart chart={trends.daily} variant="bar" />
-              <DashboardChart chart={trends.weekly} variant="bar" />
-              <DashboardChart chart={trends.monthly} variant="bar" />
-              <DashboardChart chart={trends.yearly} variant="bar" />
-            </div>
+            <DashboardChart
+              chart={
+                reportKind === "weekly"
+                  ? trends.weekly
+                  : reportKind === "monthly"
+                    ? trends.monthly
+                    : trends.daily
+              }
+              variant="bar"
+            />
           )}
 
-          {venues && (
-            <div className="grid gap-4 xl:grid-cols-2">
-              <DashboardChart chart={venues.frequency} variant="bar" />
-              <DashboardChart chart={venues.distribution} variant="distribution" />
-              <VenueList
-                title="Most frequently reserved venues"
-                rows={venues.most_frequent}
-              />
-              <VenueList
-                title="Least utilized venues"
-                rows={venues.least_utilized}
-              />
-            </div>
-          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">Department with the most events</h2>
+              <p className="mt-3 text-lg font-semibold text-slate-800 dark:text-slate-100">
+                {topOffice ? `${topOffice.office_name} · ${topOffice.total} events` : "No events in this period."}
+              </p>
+            </section>
+            <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">Most frequently used venue</h2>
+              <p className="mt-3 text-lg font-semibold text-slate-800 dark:text-slate-100">
+                {topVenue ? `${topVenue.label} · ${topVenue.value} bookings` : "No venue bookings in this period."}
+              </p>
+            </section>
+          </div>
 
           <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-              Event bookings per office
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">Venues</h2>
+              <div className="flex gap-2 text-xs">
+                <button type="button" className="rounded-lg border border-[#1E3A5F]/20 px-2 py-1" onClick={() => setVenueSort("bookings")}>Most used</button>
+                <button type="button" className="rounded-lg border border-[#1E3A5F]/20 px-2 py-1" onClick={() => setVenueSort("name")}>Name</button>
+              </div>
+            </div>
+            {venueRows.length === 0 ? (
+              <p className="mt-6 text-sm text-slate-500">No venue bookings in this period.</p>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="text-slate-500"><tr><th className="px-3 py-2">Venue</th><th className="px-3 py-2">Bookings</th></tr></thead>
+                  <tbody>
+                    {venueRows.map((row) => (
+                      <tr key={row.label} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="px-3 py-2">{row.label}</td>
+                        <td className="px-3 py-2">{row.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
+                Departments
+              </h2>
+              <div className="flex gap-2 text-xs">
+                <button type="button" className="rounded-lg border border-[#1E3A5F]/20 px-2 py-1" onClick={() => setOfficeSort("total")}>Most events</button>
+                <button type="button" className="rounded-lg border border-[#1E3A5F]/20 px-2 py-1" onClick={() => setOfficeSort("name")}>Name</button>
+              </div>
+            </div>
             {offices.length === 0 ? (
               <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
                 No office booking totals for the selected filters.
@@ -412,7 +543,7 @@ const EventReportsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {offices.map((row) => (
+                    {sortedOffices.map((row) => (
                       <tr
                         key={row.office_id ?? row.office_name}
                         className="border-t border-slate-100 dark:border-slate-800"
@@ -534,38 +665,5 @@ const EventReportsPage = () => {
     </div>
   );
 };
-
-const VenueList = ({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: { label: string; value: number }[];
-}) => (
-  <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-    <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-      {title}
-    </h2>
-    {rows.length === 0 ? (
-      <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
-        No venue utilization data for this period.
-      </p>
-    ) : (
-      <ul className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
-        {rows.map((row) => (
-          <li
-            key={row.label}
-            className="flex items-center justify-between py-2 text-sm"
-          >
-            <span className="text-slate-700 dark:text-slate-200">{row.label}</span>
-            <span className="font-semibold text-[#1E3A5F] dark:text-white">
-              {row.value}
-            </span>
-          </li>
-        ))}
-      </ul>
-    )}
-  </section>
-);
 
 export default EventReportsPage;

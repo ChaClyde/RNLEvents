@@ -7,7 +7,6 @@ import {
   FiMapPin,
   FiInfo,
   FiImage,
-  FiClock,
   FiPackage,
   FiUser,
   FiPhone,
@@ -28,6 +27,19 @@ type ResourceForm = Omit<
   VenueResource,
   "resource_id" | "venue_id" | "created_at" | "updated_at"
 >;
+
+const defaultOvertimePolicy =
+  "Monday to Friday, 8:00 AM to 5:00 PM is regular time. Saturday, Sunday, time before 8:00 AM, and time from 5:00 PM onward are overtime.";
+
+type OvertimeResourceRate = {
+  resource_name: string;
+  overtime_rate: string;
+};
+
+const emptyOvertimeResource: OvertimeResourceRate = {
+  resource_name: "",
+  overtime_rate: "",
+};
 
 const emptyResource: ResourceForm = {
   resource_name: "",
@@ -63,10 +75,16 @@ const AddVenueFormModal = ({
 
   const [facilities, setFacilities] = useState("");
 
-  const [overtimeRate, setOvertimeRate] = useState("0");
-  const [overtimePolicy, setOvertimePolicy] = useState("");
   const [status, setStatus] = useState<"available" | "unavailable">(
     "available",
+  );
+  const [pricingBasis, setPricingBasis] = useState<"hourly" | "daily">("hourly");
+  const [baseAmount, setBaseAmount] = useState("");
+  const [overtimeRate, setOvertimeRate] = useState("");
+  const [overtimePolicy, setOvertimePolicy] = useState(defaultOvertimePolicy);
+  const [overtimeResources, setOvertimeResources] = useState<OvertimeResourceRate[]>([]);
+  const [rateEffectiveFrom, setRateEffectiveFrom] = useState(
+    () => new Date().toISOString().slice(0, 10),
   );
 
   const [image, setImage] = useState<File | null>(null);
@@ -96,9 +114,13 @@ const AddVenueFormModal = ({
     setPicContactNumber("");
     setPicEmail("");
     setFacilities("");
-    setOvertimeRate("0");
-    setOvertimePolicy("");
     setStatus("available");
+    setPricingBasis("hourly");
+    setBaseAmount("");
+    setOvertimeRate("");
+    setOvertimePolicy(defaultOvertimePolicy);
+    setOvertimeResources([]);
+    setRateEffectiveFrom(new Date().toISOString().slice(0, 10));
     setImage(null);
     setImagePreview(null);
     setResources([]);
@@ -132,6 +154,26 @@ const AddVenueFormModal = ({
     );
   };
 
+  const addOvertimeResource = () => {
+    setOvertimeResources((previous) => [...previous, { ...emptyOvertimeResource }]);
+  };
+
+  const updateOvertimeResource = (
+    index: number,
+    field: keyof OvertimeResourceRate,
+    value: string,
+  ) => {
+    setOvertimeResources((previous) =>
+      previous.map((resource, i) =>
+        i === index ? { ...resource, [field]: value } : resource,
+      ),
+    );
+  };
+
+  const removeOvertimeResource = (index: number) => {
+    setOvertimeResources((previous) => previous.filter((_, i) => i !== index));
+  };
+
   const addResource = () => {
     setResources((previous) => [...previous, { ...emptyResource }]);
   };
@@ -158,6 +200,28 @@ const AddVenueFormModal = ({
       clientErrors.location = "Location is required.";
     }
 
+    if (baseAmount !== "" && Number(baseAmount) < 0) {
+      clientErrors["rate.base_amount"] = "Enter a base rental of zero or more.";
+    }
+
+    if (overtimeRate !== "" && Number(overtimeRate) < 0) {
+      clientErrors["rate.overtime_rate"] = "Enter an overtime rate of zero or more.";
+    }
+
+    if (baseAmount === "" && (overtimeRate !== "" || overtimeResources.length > 0)) {
+      clientErrors["rate.base_amount"] = "Enter the base rental with the overtime rate.";
+    }
+
+    overtimeResources.forEach((resource, index) => {
+      if (!resource.resource_name.trim()) {
+        clientErrors[`rate.resources.${index}.resource_name`] = "Resource name is required.";
+      }
+      if (resource.overtime_rate === "" || Number(resource.overtime_rate) < 0) {
+        clientErrors[`rate.resources.${index}.overtime_rate`] =
+          "Enter an overtime rate of zero or more.";
+      }
+    });
+
     resources.forEach((resource, index) => {
       if (!resource.resource_name.trim()) {
         clientErrors[`resources.${index}.resource_name`] =
@@ -179,8 +243,6 @@ const AddVenueFormModal = ({
     formData.append("person_in_charge", personInCharge.trim());
     formData.append("pic_contact_number", picContactNumber.trim());
     formData.append("pic_email", picEmail.trim());
-    formData.append("overtime_rate", overtimeRate || "0");
-    formData.append("overtime_policy", overtimePolicy);
     formData.append("status", status);
 
     facilities
@@ -193,6 +255,24 @@ const AddVenueFormModal = ({
 
     if (image) {
       formData.append("venue_image", image);
+    }
+
+    if (baseAmount !== "") {
+      formData.append("rate[pricing_basis]", pricingBasis);
+      formData.append("rate[base_amount]", baseAmount);
+      formData.append("rate[overtime_rate]", overtimeRate === "" ? "0" : overtimeRate);
+      formData.append("rate[overtime_policy]", overtimePolicy.trim());
+      formData.append("rate[effective_from]", rateEffectiveFrom);
+      overtimeResources.forEach((resource, index) => {
+        formData.append(
+          `rate[resources][${index}][resource_name]`,
+          resource.resource_name.trim(),
+        );
+        formData.append(
+          `rate[resources][${index}][overtime_rate]`,
+          resource.overtime_rate,
+        );
+      });
     }
 
     resources.forEach((resource, index) => {
@@ -487,59 +567,178 @@ const AddVenueFormModal = ({
 
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
-              <FiClock className="text-[#0095D9]" size={19} />
               <h3 className="font-semibold text-gray-900 dark:text-white">
-                Overtime Settings
+                Availability
               </h3>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className={labelClass}>Overtime Rate (₱)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={overtimeRate}
-                  onChange={(e) => setOvertimeRate(e.target.value)}
-                  className={inputClass}
-                />
-                {errors.overtime_rate && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {errors.overtime_rate}
-                  </p>
-                )}
+            <div>
+              <label className={labelClass}>Venue Status</label>
+              <select
+                value={status}
+                onChange={(e) =>
+                  setStatus(e.target.value as "available" | "unavailable")
+                }
+                className={inputClass}
+              >
+                <option value="available">Available</option>
+                <option value="unavailable">Unavailable</option>
+              </select>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                Overtime Rates
+              </h3>
+            </div>
+
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Monday to Friday, 8:00 AM to 5:00 PM is regular time. Saturday, Sunday, time before 8:00 AM, and time from 5:00 PM onward are overtime.
+            </p>
+
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Regular time</label>
+                  <input value="Monday–Friday, 8:00 AM – 5:00 PM" readOnly className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Billing basis</label>
+                  <select
+                    value={pricingBasis}
+                    onChange={(e) => setPricingBasis(e.target.value as "hourly" | "daily")}
+                    className={inputClass}
+                  >
+                    <option value="hourly">Hourly rental</option>
+                    <option value="daily">Daily rental</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>
+                    {pricingBasis === "hourly" ? "Base rental per hour" : "Base rental per day"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={baseAmount}
+                    onChange={(e) => setBaseAmount(e.target.value)}
+                    placeholder="Leave blank if no rate yet"
+                    className={inputClass}
+                  />
+                  {errors["rate.base_amount"] && (
+                    <p className="mt-1 text-xs text-red-500">{errors["rate.base_amount"]}</p>
+                  )}
+                </div>
+                <div>
+                  <label className={labelClass}>Overtime rate per hour</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={overtimeRate}
+                    onChange={(e) => setOvertimeRate(e.target.value)}
+                    placeholder="0.00"
+                    className={inputClass}
+                  />
+                  {errors["rate.overtime_rate"] && (
+                    <p className="mt-1 text-xs text-red-500">{errors["rate.overtime_rate"]}</p>
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Effective date</label>
+                  <input
+                    type="date"
+                    value={rateEffectiveFrom}
+                    onChange={(e) => setRateEffectiveFrom(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Overtime note / policy</label>
+                  <textarea
+                    value={overtimePolicy}
+                    onChange={(e) => setOvertimePolicy(e.target.value)}
+                    rows={3}
+                    className={inputClass}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className={labelClass}>Venue Status</label>
-                <select
-                  value={status}
-                  onChange={(e) =>
-                    setStatus(e.target.value as "available" | "unavailable")
-                  }
-                  className={inputClass}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Resource overtime rates
+                </p>
+                <button
+                  type="button"
+                  onClick={addOvertimeResource}
+                  className="flex items-center gap-2 rounded-xl bg-[#003B5C] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#00679E]"
                 >
-                  <option value="available">Available</option>
-                  <option value="unavailable">Unavailable</option>
-                </select>
+                  <FiPlus />
+                  Add
+                </button>
               </div>
 
-              <div className="sm:col-span-2">
-                <label className={labelClass}>Overtime Policy</label>
-                <textarea
-                  value={overtimePolicy}
-                  onChange={(e) => setOvertimePolicy(e.target.value)}
-                  rows={2}
-                  placeholder="Enter venue overtime policy..."
-                  className={inputClass}
-                />
-                {errors.overtime_policy && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {errors.overtime_policy}
-                  </p>
-                )}
-              </div>
+              {overtimeResources.length === 0 && (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No overtime resource rates yet. Use Add to charge a resource for each overtime hour.
+                </p>
+              )}
+
+              {overtimeResources.map((resource, index) => (
+                <div
+                  key={index}
+                  className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:grid-cols-[1fr_1fr_auto] dark:border-gray-700 dark:bg-gray-900"
+                >
+                  <div>
+                    <label className={labelClass}>Resource name</label>
+                    <input
+                      value={resource.resource_name}
+                      onChange={(e) =>
+                        updateOvertimeResource(index, "resource_name", e.target.value)
+                      }
+                      placeholder="e.g. Sound system"
+                      className={inputClass}
+                    />
+                    {errors[`rate.resources.${index}.resource_name`] && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {errors[`rate.resources.${index}.resource_name`]}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelClass}>Rate per overtime hour</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={resource.overtime_rate}
+                      onChange={(e) =>
+                        updateOvertimeResource(index, "overtime_rate", e.target.value)
+                      }
+                      placeholder="0.00"
+                      className={inputClass}
+                    />
+                    {errors[`rate.resources.${index}.overtime_rate`] && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {errors[`rate.resources.${index}.overtime_rate`]}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() => removeOvertimeResource(index)}
+                      className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-red-600 transition hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <FiTrash2 size={14} />
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 

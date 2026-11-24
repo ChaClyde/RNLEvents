@@ -26,11 +26,11 @@ const addDays = (value: Date, amount: number) => {
   return date;
 };
 
-// Same status colors as the dashboard: pending = yellow, approved = green,
+// Same status colors as the dashboard: pending = mustard, approved = green,
 // everything else (rejected, cancelled) = red
 const itemColor = (item: CalendarItem) => {
   if (item.status === "pending") {
-    return "bg-accent-soft text-[#6b4e00] border-accent/40";
+    return "bg-[#FFF1C2] text-[#7A5600] border-[#FFB800]/50";
   }
   if (item.status === "approved" || item.status === "scheduled") {
     return "bg-success-soft text-success border-success/20";
@@ -39,7 +39,10 @@ const itemColor = (item: CalendarItem) => {
 };
 
 const selectClass =
-  "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30";
+  "mt-1.5 w-full rounded-lg border border-[#E5E8EF] bg-white px-3 py-2.5 text-sm font-medium text-[#002583] shadow-sm outline-none transition focus:border-[#2F63D4] focus:ring-2 focus:ring-[#2F63D4]/25";
+
+const cardClass =
+  "rounded-2xl bg-white shadow-[0_4px_14px_rgba(0,37,131,0.08)] ring-1 ring-[#E5E8EF]/70";
 
 const ScheduleCalendarPage = () => {
   const [cursor, setCursor] = useState(() => new Date());
@@ -54,6 +57,8 @@ const ScheduleCalendarPage = () => {
   const [selectedDate, setSelectedDate] = useState(toDateKey(new Date()));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const todayKey = toDateKey(new Date());
 
   const range = useMemo(() => {
     if (view === "day") {
@@ -163,182 +168,245 @@ const ScheduleCalendarPage = () => {
     setCursor(next);
   };
 
+  const goToday = () => {
+    const now = new Date();
+    setCursor(now);
+    setSelectedDate(toDateKey(now));
+  };
+
+  const selectedLabel = new Date(`${selectedDate}T00:00:00`).toLocaleDateString(
+    "en-PH",
+    { weekday: "long", month: "long", day: "numeric", year: "numeric" },
+  );
+
   return (
-    <div className="min-h-screen bg-page p-4 sm:p-6">
-      <div className="mx-auto max-w-[1600px] space-y-5">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-ink">Schedule Calendar</h1>
-            <p className="mt-1 text-sm text-muted">
-              Event, venue, vehicle, and driver schedules you are authorized to
-              see.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+    <div className="space-y-6">
+      {/* HEADER BANNER */}
+      <header className="flex flex-col gap-4 rounded-2xl bg-linear-to-r from-[#0B3A9F] via-[#002583] to-[#0A1A45] px-6 py-5 text-white shadow-md lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-sm font-extrabold tracking-wider text-[#FFB800] [font-variant-caps:small-caps]">
+            FilSched
+          </p>
+          <h1 className="mt-1 text-2xl font-bold">Schedule Calendar</h1>
+          <p className="mt-1 text-sm text-white/90">
+            Event, venue, vehicle, and driver schedules you are authorized to
+            see.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg bg-white/10 p-1">
             {(["month", "week", "day"] as CalendarView[]).map((option) => (
               <button
                 key={option}
                 type="button"
                 onClick={() => setView(option)}
-                className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-colors ${
                   view === option
-                    ? "bg-primary text-on-primary"
-                    : "border border-line bg-surface text-ink hover:bg-primary-soft hover:text-primary"
+                    ? "bg-white text-[#002583] shadow-sm"
+                    : "text-white/80 hover:bg-white/15 hover:text-white"
                 }`}
               >
                 {option[0].toUpperCase() + option.slice(1)}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={load}
-              className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink transition-colors hover:bg-primary-soft hover:text-primary"
-            >
-              <FiRefreshCw className={loading ? "animate-spin" : ""} />
-              Refresh
-            </button>
           </div>
-        </div>
 
-        <div className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3">
           <button
             type="button"
-            onClick={() => shift(-1)}
-            aria-label="Previous"
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-primary-soft hover:text-primary"
+            onClick={load}
+            className="flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-[#002583] shadow-sm transition-colors hover:bg-[#E5E8EF] focus:outline-none focus:ring-2 focus:ring-[#FFB800]"
           >
-            <FiChevronLeft />
+            <FiRefreshCw className={loading ? "animate-spin" : ""} />
+            Refresh
           </button>
-          <p className="font-semibold text-ink">
+        </div>
+      </header>
+
+      {/* MONTH NAVIGATION */}
+      <div
+        className={`${cardClass} flex items-center justify-between gap-3 px-4 py-3`}
+      >
+        <button
+          type="button"
+          onClick={() => shift(-1)}
+          aria-label="Previous"
+          className="rounded-xl border border-[#E5E8EF] p-2 text-[#002583] transition-colors hover:bg-[#E5E8EF]"
+        >
+          <FiChevronLeft />
+        </button>
+
+        <div className="flex items-center gap-3">
+          <p className="text-lg font-bold text-[#002583]">
             {cursor.toLocaleDateString("en-PH", {
               month: "long",
               year: "numeric",
               ...(view !== "month" ? { day: "numeric" } : {}),
             })}
           </p>
+
           <button
             type="button"
-            onClick={() => shift(1)}
-            aria-label="Next"
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-primary-soft hover:text-primary"
+            onClick={goToday}
+            className="rounded-lg bg-[#FFB800] px-3 py-1 text-xs font-bold text-[#002583] transition-colors hover:bg-[#FFC933]"
           >
-            <FiChevronRight />
+            Today
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-3">
-          <label className="text-sm font-medium text-muted">
-            Venue
-            <select
-              value={venueId}
-              onChange={(event) => setVenueId(event.target.value)}
-              className={selectClass}
-            >
-              <option value="">All venues</option>
-              {venues.map((venue) => (
-                <option key={venue.venue_id} value={venue.venue_id}>
-                  {venue.venue}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium text-muted">
-            Vehicle
-            <select
-              value={vehicleId}
-              onChange={(event) => setVehicleId(event.target.value)}
-              className={selectClass}
-            >
-              <option value="">All vehicles</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.vehicle_id} value={vehicle.vehicle_id}>
-                  {vehicle.plate_number
-                    ? `${vehicle.vehicle_name} (${vehicle.plate_number})`
-                    : vehicle.vehicle_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium text-muted">
-            Driver
-            <select
-              value={driverId}
-              onChange={(event) => setDriverId(event.target.value)}
-              className={selectClass}
-            >
-              <option value="">All drivers</option>
-              {drivers.map((driver) => (
-                <option key={driver.driver_id} value={driver.driver_id}>
-                  {driver.driver_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {(venueId || vehicleId || driverId) && (
-            <div className="sm:col-span-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setVenueId("");
-                  setVehicleId("");
-                  setDriverId("");
-                }}
-                className="text-sm font-semibold text-primary hover:text-primary-hover"
-              >
-                Clear filters
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => shift(1)}
+          aria-label="Next"
+          className="rounded-xl border border-[#E5E8EF] p-2 text-[#002583] transition-colors hover:bg-[#E5E8EF]"
+        >
+          <FiChevronRight />
+        </button>
+      </div>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
+      {/* FILTERS */}
+      <div className={`${cardClass} grid grid-cols-1 gap-3 p-4 sm:grid-cols-3`}>
+        <label className="text-sm font-medium text-[#5B6678]">
+          Venue
+          <select
+            value={venueId}
+            onChange={(event) => setVenueId(event.target.value)}
+            className={selectClass}
+          >
+            <option value="">All venues</option>
+            {venues.map((venue) => (
+              <option key={venue.venue_id} value={venue.venue_id}>
+                {venue.venue}
+              </option>
+            ))}
+          </select>
+        </label>
 
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">
-          <div className="grid grid-cols-7 gap-1 rounded-xl border border-line bg-surface p-3">
+        <label className="text-sm font-medium text-[#5B6678]">
+          Vehicle
+          <select
+            value={vehicleId}
+            onChange={(event) => setVehicleId(event.target.value)}
+            className={selectClass}
+          >
+            <option value="">All vehicles</option>
+            {vehicles.map((vehicle) => (
+              <option key={vehicle.vehicle_id} value={vehicle.vehicle_id}>
+                {vehicle.plate_number
+                  ? `${vehicle.vehicle_name} (${vehicle.plate_number})`
+                  : vehicle.vehicle_name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm font-medium text-[#5B6678]">
+          Driver
+          <select
+            value={driverId}
+            onChange={(event) => setDriverId(event.target.value)}
+            className={selectClass}
+          >
+            <option value="">All drivers</option>
+            {drivers.map((driver) => (
+              <option key={driver.driver_id} value={driver.driver_id}>
+                {driver.driver_name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {(venueId || vehicleId || driverId) && (
+          <div className="sm:col-span-3">
+            <button
+              type="button"
+              onClick={() => {
+                setVenueId("");
+                setVehicleId("");
+                setDriverId("");
+              }}
+              className="text-sm font-semibold text-[#2F63D4] transition-colors hover:text-[#002583]"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <p className="rounded-2xl border border-danger/20 bg-danger-soft p-4 text-sm text-danger">
+          {error}
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">
+        {/* CALENDAR GRID */}
+        <div className={`${cardClass} overflow-hidden`}>
+          <div className="border-b border-[#E5E8EF] px-5 py-3.5">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[#002583]">
+              {view === "month"
+                ? "Monthly schedule"
+                : view === "week"
+                  ? "Weekly schedule"
+                  : "Daily schedule"}
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1.5 p-4">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => (
               <div
                 key={label}
-                className="pb-2 text-center text-xs font-semibold text-muted"
+                className="pb-2 text-center text-xs font-bold uppercase tracking-wide text-[#002583]"
               >
                 {label}
               </div>
             ))}
+
             {days.map((day) => {
               const key = toDateKey(day);
               const dayItems = itemsByDay.get(key) ?? [];
               const outsideMonth =
                 view === "month" && day.getMonth() !== cursor.getMonth();
+              const isToday = key === todayKey;
 
               return (
                 <button
                   key={key + day.toISOString()}
                   type="button"
                   onClick={() => setSelectedDate(key)}
-                  className={`min-h-24 rounded-lg border p-2 text-left text-xs transition-colors ${
+                  className={`min-h-24 rounded-xl border p-2 text-left text-xs transition-colors ${
                     selectedDate === key
-                      ? "border-primary bg-primary-soft"
-                      : "border-transparent hover:bg-page"
+                      ? "border-[#002583] bg-[#E3EBFF]"
+                      : "border-[#E5E8EF] hover:border-[#2F63D4] hover:bg-[#F4F7FD]"
                   } ${outsideMonth ? "opacity-40" : ""}`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-ink">
+                    <span
+                      className={`flex h-6 w-6 items-center justify-center rounded-full font-semibold ${
+                        isToday ? "bg-[#002583] text-white" : "text-[#002583]"
+                      }`}
+                    >
                       {day.getDate()}
                     </span>
                     {hasConflictDay(key) && (
-                      <span className="h-2 w-2 rounded-full bg-danger" />
+                      <span
+                        className="h-2 w-2 rounded-full bg-danger"
+                        title="More than one item on this day"
+                      />
                     )}
                   </div>
+
                   <div className="mt-1 space-y-1">
                     {dayItems.slice(0, 3).map((item) => (
                       <p
                         key={item.id}
-                        className={`truncate rounded border px-1 py-0.5 ${itemColor(item)}`}
+                        className={`truncate rounded-md border px-1.5 py-0.5 font-medium ${itemColor(item)}`}
                       >
                         {item.title}
                       </p>
                     ))}
                     {dayItems.length > 3 && (
-                      <p className="text-[10px] text-muted">
+                      <p className="text-[10px] font-medium text-[#5B6678]">
                         +{dayItems.length - 3} more
                       </p>
                     )}
@@ -348,16 +416,46 @@ const ScheduleCalendarPage = () => {
             })}
           </div>
 
-          <aside className="rounded-xl border border-line bg-surface p-4">
-            <h2 className="font-bold text-ink">Details for {selectedDate}</h2>
+          {/* Legend */}
+          <div className="flex flex-wrap gap-4 border-t border-[#E5E8EF] px-5 py-3 text-xs text-[#5B6678]">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-[#FFB800]" /> Pending
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-success" /> Approved /
+              scheduled
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-danger" /> Rejected /
+              cancelled
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-danger" /> Busy day
+            </span>
+          </div>
+        </div>
+
+        {/* DETAILS */}
+        <aside className={`${cardClass} overflow-hidden`}>
+          <div className="border-b border-[#E5E8EF] px-5 py-3.5">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[#002583]">
+              Details
+            </h2>
+          </div>
+
+          <div className="p-5">
+            <p className="text-base font-bold text-[#002583]">
+              {selectedLabel}
+            </p>
+
             {selectedItems.length === 0 ? (
-              <p className="mt-3 text-sm text-muted">No scheduled items.</p>
+              <p className="mt-6 text-sm text-[#5B6678]">No scheduled items.</p>
             ) : (
-              <ul className="mt-3 space-y-3">
+              <ul className="mt-4 space-y-3">
                 {selectedItems.map((item) => (
                   <li
                     key={item.id}
-                    className={`rounded-lg border p-3 text-sm ${itemColor(item)}`}
+                    className={`rounded-xl border p-3 text-sm ${itemColor(item)}`}
                   >
                     <p className="font-semibold">{item.title}</p>
                     <p className="mt-1 text-xs uppercase">
@@ -381,8 +479,8 @@ const ScheduleCalendarPage = () => {
                 ))}
               </ul>
             )}
-          </aside>
-        </div>
+          </div>
+        </aside>
       </div>
     </div>
   );

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FiSearch,
   FiMapPin,
   FiUsers,
   FiUser,
   FiEdit2,
+  FiEye,
   FiTrash2,
   FiChevronLeft,
   FiChevronRight,
@@ -16,6 +17,7 @@ import {
 
 import VenueService from "../../../services/VenueService";
 import type { VenueColumns } from "../../../interfaces/VenueColumns";
+import { VenueDetailsCard } from "./VenueSelect";
 
 interface VenueListProps {
   venues: VenueColumns[];
@@ -25,10 +27,71 @@ interface VenueListProps {
 
 const ITEMS_PER_PAGE = 6;
 
+interface DatedOvertime {
+  venue_id: number;
+  overtime_rate: string | null;
+  included_hours: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  is_active: boolean;
+}
+
+const activeOvertimeLabel = (rates: DatedOvertime[]) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const rate = rates
+    .filter((item) => {
+      if (!item.is_active || item.effective_from > today) return false;
+      return !item.effective_to || item.effective_to >= today;
+    })
+    .sort((left, right) =>
+      right.effective_from.localeCompare(left.effective_from),
+    )[0];
+
+  if (!rate) {
+    return "Not yet configured";
+  }
+
+  return `${Number(rate.overtime_rate ?? 0).toLocaleString("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+  })} per hour`;
+};
+
 const VenueList = ({ venues, onEdit, onDelete }: VenueListProps) => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [overtimeLabels, setOvertimeLabels] = useState<Record<number, string>>(
+    {},
+  );
+  const [viewVenue, setViewVenue] = useState<VenueColumns | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all(
+      venues.map(async (venue) => {
+        try {
+          const response = await VenueService.loadRates(venue.venue_id);
+          return [
+            venue.venue_id,
+            activeOvertimeLabel(response.data.data ?? []),
+          ] as const;
+        } catch {
+          return [venue.venue_id, "Not yet configured"] as const;
+        }
+      }),
+    ).then((rows) => {
+      if (!cancelled) {
+        setOvertimeLabels(Object.fromEntries(rows));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [venues]);
 
   const filteredVenues = useMemo(() => {
     const keyword = search.toLowerCase().trim();
@@ -78,14 +141,6 @@ const VenueList = ({ venues, onEdit, onDelete }: VenueListProps) => {
     setSearch("");
     setStatusFilter("all");
     setCurrentPage(1);
-  };
-
-  const formatRate = (rate: number | string) => {
-    return Number(rate || 0).toLocaleString("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      minimumFractionDigits: 2,
-    });
   };
 
   return (
@@ -209,6 +264,15 @@ const VenueList = ({ venues, onEdit, onDelete }: VenueListProps) => {
                 <div className="absolute bottom-3 right-3 flex gap-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                   <button
                     type="button"
+                    onClick={() => setViewVenue(venue)}
+                    title="View venue"
+                    className="rounded-lg bg-white/95 p-2.5 text-[#00679E] shadow-md transition hover:bg-[#00679E] hover:text-white"
+                  >
+                    <FiEye size={16} />
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => onEdit(venue)}
                     title="Edit venue"
                     className="rounded-lg bg-white/95 p-2.5 text-[#00679E] shadow-md transition hover:bg-[#00679E] hover:text-white"
@@ -310,7 +374,6 @@ const VenueList = ({ venues, onEdit, onDelete }: VenueListProps) => {
                   </span>
                 </div>
 
-                {/* Overtime */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                     <FiClock className="text-[#0095D9]" />
@@ -318,12 +381,21 @@ const VenueList = ({ venues, onEdit, onDelete }: VenueListProps) => {
                   </div>
 
                   <span className="text-right text-sm font-semibold text-gray-800 dark:text-gray-200">
-                    {formatRate(venue.overtime_rate)}
+                    {overtimeLabels[venue.venue_id] ?? "Not yet configured"}
                   </span>
                 </div>
 
                 {/* Actions */}
-                <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                <div className="grid grid-cols-3 gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => setViewVenue(venue)}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 px-3 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+                  >
+                    <FiEye size={15} />
+                    View
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => onEdit(venue)}
@@ -391,6 +463,27 @@ const VenueList = ({ venues, onEdit, onDelete }: VenueListProps) => {
             >
               <FiChevronRight />
             </button>
+          </div>
+        </div>
+      )}
+
+      {viewVenue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                Venue details
+              </h2>
+              <button
+                type="button"
+                onClick={() => setViewVenue(null)}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Close venue details"
+              >
+                <FiX />
+              </button>
+            </div>
+            <VenueDetailsCard venue={viewVenue} />
           </div>
         </div>
       )}

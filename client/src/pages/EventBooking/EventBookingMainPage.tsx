@@ -15,9 +15,11 @@ import type {
   EventBookingColumns,
   EventBookingFormData,
 } from "../../interfaces/EventBookingColumns";
+import type { EventBookingAttachmentDraft } from "./components/EventBookingForm";
 import type { VenueColumns } from "../../interfaces/VenueColumns";
 import type { OfficeColumns } from "../../interfaces/OfficeColumns";
-import { parseApiError } from "../../interfaces/EventBookingHelpers";
+import { isFinancialTurn, parseApiError } from "../../interfaces/EventBookingHelpers";
+import { useAuth } from "../../contexts/AuthContext";
 
 import { useToastMessage } from "../../hooks/useToastMessage";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -88,6 +90,7 @@ const EventBookingMainPage = () => {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const [editBooking, setEditBooking] = useState<EventBookingColumns | null>(
     null,
@@ -99,6 +102,7 @@ const EventBookingMainPage = () => {
   );
   const [isActing, setIsActing] = useState(false);
   const { can } = usePermissions();
+  const { user } = useAuth();
 
   const { message, isVisible, showToastMessage, closeToastMessage } =
     useToastMessage("", false);
@@ -172,11 +176,35 @@ const EventBookingMainPage = () => {
   // Errors are re-thrown so the modal can show them under its fields.
   // --------------------------------------
 
-  const handleAddBooking = async (data: EventBookingFormData) => {
+  const syncAttachment = async (
+    eventBookingId: number,
+    attachment: EventBookingAttachmentDraft,
+    existingId?: number,
+  ) => {
+    if (attachment.removeExisting && existingId) {
+      await EventBookingService.deleteAttachment(eventBookingId, existingId);
+    }
+
+    if (attachment.file) {
+      setUploadProgress(0);
+      await EventBookingService.uploadAttachment(
+        eventBookingId,
+        attachment.file,
+        setUploadProgress,
+      );
+    }
+  };
+
+  const handleAddBooking = async (
+    data: EventBookingFormData,
+    attachment: EventBookingAttachmentDraft,
+  ) => {
     try {
       setIsSubmitting(true);
+      setUploadProgress(null);
 
-      await EventBookingService.storeEventBooking(data);
+      const created = await EventBookingService.storeEventBooking(data);
+      await syncAttachment(created.data.data.event_booking_id, attachment);
 
       setIsAddOpen(false);
       notify("Event booking submitted successfully!");
@@ -184,6 +212,7 @@ const EventBookingMainPage = () => {
       await loadBookings();
     } finally {
       setIsSubmitting(false);
+      setUploadProgress(null);
     }
   };
 
@@ -194,11 +223,18 @@ const EventBookingMainPage = () => {
   const handleUpdateBooking = async (
     event_booking_id: number,
     data: EventBookingFormData,
+    attachment: EventBookingAttachmentDraft,
   ) => {
     try {
       setIsUpdating(true);
+      setUploadProgress(null);
 
       await EventBookingService.updateEventBooking(event_booking_id, data);
+      await syncAttachment(
+        event_booking_id,
+        attachment,
+        editBooking?.attachments?.[0]?.attachment_id,
+      );
 
       setEditBooking(null);
       notify("Event booking updated successfully!");
@@ -206,6 +242,7 @@ const EventBookingMainPage = () => {
       await loadBookings();
     } finally {
       setIsUpdating(false);
+      setUploadProgress(null);
     }
   };
 
@@ -244,7 +281,8 @@ const EventBookingMainPage = () => {
 
   const canApproveBooking = (booking: EventBookingColumns) =>
     booking.status === "pending" &&
-    can(Permission.EVENT_APPROVALS_APPROVE, bookingPermissionContext(booking));
+    can(Permission.EVENT_APPROVALS_APPROVE, bookingPermissionContext(booking)) &&
+    isFinancialTurn(user?.role?.slug, booking);
 
   const canCancelBooking = (booking: EventBookingColumns) =>
     (booking.status === "pending" || booking.status === "approved") &&
@@ -420,6 +458,7 @@ const EventBookingMainPage = () => {
           onClose={() => setIsAddOpen(false)}
           onSubmit={handleAddBooking}
           isSubmitting={isSubmitting}
+          uploadProgress={uploadProgress}
         />
       )}
 
@@ -433,6 +472,7 @@ const EventBookingMainPage = () => {
           onClose={() => setEditBooking(null)}
           onSubmit={handleUpdateBooking}
           isSubmitting={isUpdating}
+          uploadProgress={uploadProgress}
         />
       )}
 

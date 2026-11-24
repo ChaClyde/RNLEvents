@@ -6,15 +6,15 @@ import { ApprovalStage } from "../permissions/constants";
 
 export const EVENT_APPROVAL_PIPELINE = [
   ApprovalStage.OFFICE_HEAD,
-  ApprovalStage.EVENT_APPROVAL,
   ApprovalStage.EVENT_ADMIN,
+  ApprovalStage.EVENT_APPROVAL,
   ApprovalStage.SUPER_ADMIN,
 ] as const;
 
 export const EVENT_STAGE_LABELS: Record<string, string> = {
   [ApprovalStage.OFFICE_HEAD]: "Pending Dean Approval",
-  [ApprovalStage.EVENT_APPROVAL]: "Pending Event Approval Admin",
-  [ApprovalStage.EVENT_ADMIN]: "Pending Administrator Approval",
+  [ApprovalStage.EVENT_ADMIN]: "Pending Event Admin",
+  [ApprovalStage.EVENT_APPROVAL]: "Pending Admin Approvals",
   [ApprovalStage.SUPER_ADMIN]: "Pending Super Admin Approval",
 };
 
@@ -23,10 +23,76 @@ export const getApprovalStageLabel = (stage: string | null | undefined): string 
 
 export const getLifecycleLabel = (booking: EventBookingColumns): string => {
   if (booking.status === "pending") {
+    if (booking.approval_stage === ApprovalStage.EVENT_APPROVAL) {
+      return financialVerificationLabel(booking.approvals);
+    }
+
     return getApprovalStageLabel(booking.approval_stage);
   }
 
   return getStatusLabel(booking.status);
+};
+
+export const financialVerificationLabel = (
+  approvals: EventBookingColumns["approvals"],
+): string => {
+  const rows = (approvals ?? []).filter(
+    (row) => row.approval_stage === ApprovalStage.EVENT_APPROVAL,
+  );
+
+  if (!rows.some((row) => row.decision_slot)) {
+    return "Pending Admin Approvals";
+  }
+
+  const businessManager = rows.find(
+    (row) => row.decision_slot === "business_manager",
+  );
+
+  if (businessManager?.action !== "approved") {
+    return "Pending Business Manager";
+  }
+
+  return "Pending VP-Finance";
+};
+
+export const isFinancialTurn = (
+  roleSlug: string | null | undefined,
+  booking: {
+    approval_stage: string;
+    approvals?: {
+      approval_stage: string;
+      decision_slot?: string | null;
+      action: string;
+    }[];
+  },
+): boolean => {
+  if (booking.approval_stage !== ApprovalStage.EVENT_APPROVAL) {
+    return true;
+  }
+
+  const rows = (booking.approvals ?? []).filter(
+    (row) => row.approval_stage === ApprovalStage.EVENT_APPROVAL,
+  );
+
+  if (!rows.some((row) => row.decision_slot)) {
+    return true;
+  }
+
+  const businessManagerApproved = rows.some(
+    (row) =>
+      row.decision_slot === "business_manager" && row.action === "approved",
+  );
+  const vpDecided = rows.some((row) => row.decision_slot === "vp_finance");
+
+  if (roleSlug === "business-manager") {
+    return !rows.some((row) => row.decision_slot === "business_manager");
+  }
+
+  if (roleSlug === "vp-finance") {
+    return businessManagerApproved && !vpDecided;
+  }
+
+  return false;
 };
 
 export const isRequesterEditable = (booking: EventBookingColumns): boolean =>

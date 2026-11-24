@@ -9,6 +9,7 @@ import {
 
 import TimeSelect from "./TimeSelect";
 import {
+  earliestBookingDate,
   formatShortDate,
   to12h,
   WEEKDAY_SHORT,
@@ -24,6 +25,7 @@ interface SchedulePickerProps {
   conflictDates: Set<string>;
   errors: Record<string, string>;
   extraMessages?: string[];
+  timeHint?: string;
   today: string;
   disabled?: boolean;
 }
@@ -55,9 +57,11 @@ const SchedulePicker = ({
   conflictDates,
   errors,
   extraMessages = [],
+  timeHint,
   today,
   disabled,
 }: SchedulePickerProps) => {
+  const earliest = earliestBookingDate(today);
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [newDate, setNewDate] = useState("");
 
@@ -162,7 +166,7 @@ const SchedulePicker = ({
             </label>
             <input
               type="date"
-              min={today}
+              min={earliest}
               value={value.date_start}
               onChange={(e) =>
                 set({ date_start: e.target.value, excluded: [] })
@@ -171,6 +175,9 @@ const SchedulePicker = ({
               className={inputClass}
             />
             <Err message={errors.date_start} />
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+              Book at least 2 days before the event.
+            </p>
           </div>
 
           <div>
@@ -179,7 +186,7 @@ const SchedulePicker = ({
             </label>
             <input
               type="date"
-              min={value.date_start || today}
+              min={value.date_start || earliest}
               value={value.date_end}
               onChange={(e) => set({ date_end: e.target.value, excluded: [] })}
               disabled={disabled}
@@ -194,7 +201,7 @@ const SchedulePicker = ({
           <div className="flex gap-2">
             <input
               type="date"
-              min={today}
+              min={earliest}
               value={newDate}
               onChange={(e) => setNewDate(e.target.value)}
               disabled={disabled}
@@ -249,16 +256,22 @@ const SchedulePicker = ({
             value={value.time_start}
             onChange={(time_start) => set({ time_start })}
             disabled={disabled}
+            invalid={Boolean(errors.time_start)}
           />
           <span className="text-sm text-gray-400">to</span>
           <TimeSelect
             value={value.time_end}
             onChange={(time_end) => set({ time_end })}
             disabled={disabled}
-            invalid={Boolean(errors.time_end)}
+            invalid={Boolean(errors.time_end || errors.time_start)}
           />
         </div>
-        <Err message={errors.time_end} />
+        <Err message={errors.time_start || errors.time_end} />
+        {timeHint && (
+          <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {timeHint}
+          </p>
+        )}
         <p className="mt-1.5 text-xs text-gray-400">
           Need a different time on one date (e.g. the last day runs longer)? Use
           Edit time on that date below.

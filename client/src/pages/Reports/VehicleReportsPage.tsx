@@ -4,7 +4,11 @@ import { Car, FileDown, FileSpreadsheet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Permission } from "../../permissions";
 import { usePermissions } from "../../hooks/usePermissions";
-import { downloadReportResponse } from "../../services/downloadReport";
+import {
+  downloadReportResponse,
+  printReportResponse,
+} from "../../services/downloadReport";
+import { periodRange, todayIso, type PeriodKind } from "./reportPeriod";
 import VehicleReportService, {
   type VehicleReportBookingRow,
   type VehicleReportCard,
@@ -19,9 +23,12 @@ import DashboardChart from "../Dashboard/components/DashboardChart";
 import DashboardSkeleton from "../Dashboard/components/DashboardSkeleton";
 import StatCard from "../Dashboard/components/StatCard";
 
+const openingDay = todayIso();
+const openingRange = periodRange("daily", openingDay);
+
 const emptyFilters: VehicleReportFilters = {
-  start_date: "",
-  end_date: "",
+  start_date: openingRange.start,
+  end_date: openingRange.end,
   status: "",
   office_id: "",
   vehicle_id: "",
@@ -33,6 +40,7 @@ const emptyFilters: VehicleReportFilters = {
   per_page: 10,
   sort: "travel_date",
   direction: "desc",
+  report: "daily",
 };
 
 const VehicleReportsPage = () => {
@@ -60,8 +68,10 @@ const VehicleReportsPage = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | "excel" | "print" | null>(null);
   const [exportError, setExportError] = useState("");
+  const [anchor, setAnchor] = useState(openingDay);
+  const [groupSort, setGroupSort] = useState<"count" | "name">("count");
 
   const queryFilters = useMemo(() => applied, [applied]);
 
@@ -118,7 +128,29 @@ const VehicleReportsPage = () => {
     return rest;
   }, [applied]);
 
-  const exportReport = async (format: "pdf" | "excel") => {
+  const applyPeriod = (
+    report: VehicleReportFilters["report"],
+    day: string,
+    source = filters,
+  ) => {
+    const grain = (report === "daily" || report === "weekly" || report === "monthly"
+      ? report
+      : source.report === "weekly" || source.report === "monthly"
+        ? source.report
+        : "daily") as PeriodKind;
+    const dated = periodRange(grain, day);
+    const next = {
+      ...source,
+      report,
+      start_date: dated.start,
+      end_date: dated.end,
+      page: 1,
+    };
+    setFilters(next);
+    setApplied(next);
+  };
+
+  const exportReport = async (format: "pdf" | "excel" | "print") => {
     if (exporting) {
       return;
     }
@@ -127,17 +159,23 @@ const VehicleReportsPage = () => {
     setExportError("");
 
     try {
-      const response =
-        format === "pdf"
-          ? await VehicleReportService.exportPdf(exportFilters)
-          : await VehicleReportService.exportExcel(exportFilters);
-
-      await downloadReportResponse(
-        response,
-        `FilSched-Vehicle-Report.${format === "pdf" ? "pdf" : "xlsx"}`,
+      if (format === "excel") {
+        const excel = await VehicleReportService.exportExcel(exportFilters);
+        await downloadReportResponse(excel, "FilSched-Vehicle-Report.xlsx");
+        return;
+      }
+      const response = await VehicleReportService.exportPdf(exportFilters);
+      if (format === "print") {
+        await printReportResponse(response);
+        return;
+      }
+      await downloadReportResponse(response, "FilSched-Vehicle-Report.pdf");
+    } catch (err) {
+      setExportError(
+        err instanceof Error
+          ? err.message
+          : "Unable to export the vehicle report. Please try again.",
       );
-    } catch {
-      setExportError("Unable to export the vehicle report. Please try again.");
     } finally {
       setExporting(null);
     }
@@ -149,6 +187,41 @@ const VehicleReportsPage = () => {
   ) => {
     setFilters((current) => ({ ...current, [key]: value }));
   };
+
+  const reportKind = applied.report || "daily";
+  const showPeriod = reportKind === "daily" || reportKind === "weekly" || reportKind === "monthly";
+  const showDriver = showPeriod || reportKind === "driver";
+  const showUsage = showPeriod || reportKind === "usage";
+  const sortedOffices = useMemo(() => {
+    const rows = [...offices];
+    rows.sort((left, right) =>
+      groupSort === "name"
+        ? left.office_name.localeCompare(right.office_name)
+        : right.total - left.total || left.office_name.localeCompare(right.office_name),
+    );
+    return rows;
+  }, [offices, groupSort]);
+  const sortedVehicles = useMemo(() => {
+    const rows = [...(utilization?.trips_per_vehicle ?? [])];
+    rows.sort((left, right) =>
+      groupSort === "name"
+        ? left.label.localeCompare(right.label)
+        : right.value - left.value || left.label.localeCompare(right.label),
+    );
+    return rows;
+  }, [utilization, groupSort]);
+  const sortedDrivers = useMemo(() => {
+    const rows = [...(drivers?.assignments ?? [])];
+    rows.sort((left, right) =>
+      groupSort === "name"
+        ? left.label.localeCompare(right.label)
+        : right.value - left.value || left.label.localeCompare(right.label),
+    );
+    return rows;
+  }, [drivers, groupSort]);
+  const topOffice = [...offices].sort((left, right) => right.total - left.total)[0];
+  const topVehicle = utilization?.most_frequent?.[0];
+  const topDriver = drivers?.assignments?.[0];
 
   if (!can(Permission.REPORTS_VIEW) || !canOpen) {
     return (
@@ -181,11 +254,19 @@ const VehicleReportsPage = () => {
               Vehicle & Driver Reports
             </h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Trip, fleet, and driver statistics from live FilSched records.
+              Daily, weekly, and monthly trip reports, plus driver and vehicle usage.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void exportReport("print")}
+            disabled={!!exporting}
+            className="inline-flex items-center gap-2 rounded-xl border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] disabled:opacity-60 dark:border-slate-600 dark:text-white"
+          >
+            {exporting === "print" ? "Preparing print..." : "Print"}
+          </button>
           <button
             type="button"
             onClick={() => void exportReport("pdf")}
@@ -213,24 +294,51 @@ const VehicleReportsPage = () => {
       ) : null}
 
       <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <div className="mb-4 flex flex-wrap gap-2">
+          {(
+            [
+              ["daily", "Daily report"],
+              ["weekly", "Weekly report"],
+              ["monthly", "Monthly report"],
+              ["driver", "Driver report"],
+              ["usage", "Vehicle usage report"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => applyPeriod(value, anchor)}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                reportKind === value
+                  ? "bg-[#1E3A5F] text-white"
+                  : "border border-[#1E3A5F]/20 text-[#1E3A5F] dark:border-slate-600 dark:text-slate-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mb-3 flex flex-wrap gap-2 text-xs">
+          <button type="button" className="rounded-lg border border-[#1E3A5F]/20 px-2 py-1" onClick={() => setGroupSort("count")}>Most trips</button>
+          <button type="button" className="rounded-lg border border-[#1E3A5F]/20 px-2 py-1" onClick={() => setGroupSort("name")}>Name</button>
+          <span className="self-center text-sm text-slate-500">{applied.start_date} to {applied.end_date}</span>
+        </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="text-sm text-slate-600 dark:text-slate-300">
-            Start date
+            {reportKind === "monthly" ? "Month" : reportKind === "weekly" ? "Week containing" : "Day"}
             <input
-              type="date"
-              value={filters.start_date ?? ""}
-              onChange={(event) =>
-                updateFilter("start_date", event.target.value)
-              }
-              className="mt-1 w-full rounded-xl border border-[#1E3A5F]/20 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-            />
-          </label>
-          <label className="text-sm text-slate-600 dark:text-slate-300">
-            End date
-            <input
-              type="date"
-              value={filters.end_date ?? ""}
-              onChange={(event) => updateFilter("end_date", event.target.value)}
+              type={reportKind === "monthly" ? "month" : "date"}
+              value={reportKind === "monthly" ? anchor.slice(0, 7) : anchor}
+              onChange={(event) => {
+                const value =
+                  reportKind === "monthly" && event.target.value
+                    ? `${event.target.value}-01`
+                    : event.target.value;
+                setAnchor(value);
+                if (value) {
+                  applyPeriod(reportKind, value);
+                }
+              }}
               className="mt-1 w-full rounded-xl border border-[#1E3A5F]/20 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             />
           </label>
@@ -364,8 +472,12 @@ const VehicleReportsPage = () => {
           <button
             type="button"
             onClick={() => {
-              setFilters(emptyFilters);
-              setApplied(emptyFilters);
+              const day = todayIso();
+              setAnchor(day);
+              const range = periodRange("daily", day);
+              const next = { ...emptyFilters, start_date: range.start, end_date: range.end, report: "daily" as const };
+              setFilters(next);
+              setApplied(next);
             }}
             className="rounded-xl border border-[#1E3A5F]/20 px-4 py-2 text-sm text-[#1E3A5F] dark:border-slate-600 dark:text-slate-200"
           >
@@ -397,7 +509,7 @@ const VehicleReportsPage = () => {
             ))}
           </div>
 
-          {utilization?.can_view_fleet && (
+          {showUsage && utilization?.can_view_fleet && (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard
                 label="Available Vehicles"
@@ -415,38 +527,49 @@ const VehicleReportsPage = () => {
             </div>
           )}
 
-          {trends && (
+          {showPeriod && trends && (
             <div className="grid gap-4 xl:grid-cols-2">
-              <DashboardChart chart={trends.daily} variant="bar" />
-              <DashboardChart chart={trends.weekly} variant="bar" />
-              <DashboardChart chart={trends.monthly} variant="bar" />
-              <DashboardChart chart={trends.yearly} variant="bar" />
               <DashboardChart
-                chart={trends.status_distribution}
-                variant="distribution"
+                chart={
+                  reportKind === "weekly"
+                    ? trends.weekly
+                    : reportKind === "monthly"
+                      ? trends.monthly
+                      : trends.daily
+                }
+                variant="bar"
               />
+              <DashboardChart chart={trends.status_distribution} variant="distribution" />
             </div>
           )}
 
-          {utilization && (
+          <div className="grid gap-4 md:grid-cols-3">
+            <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="text-sm font-semibold text-[#1E3A5F] dark:text-white">Department with the most trips</h2>
+              <p className="mt-3 text-lg font-semibold">{topOffice ? `${topOffice.office_name} · ${topOffice.total}` : "None in this period."}</p>
+            </section>
+            <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="text-sm font-semibold text-[#1E3A5F] dark:text-white">Most frequently used vehicle</h2>
+              <p className="mt-3 text-lg font-semibold">{topVehicle ? `${topVehicle.label} · ${topVehicle.value}` : "None in this period."}</p>
+            </section>
+            <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="text-sm font-semibold text-[#1E3A5F] dark:text-white">Most frequently booked driver</h2>
+              <p className="mt-3 text-lg font-semibold">{topDriver ? `${topDriver.label} · ${topDriver.value}` : "None in this period."}</p>
+            </section>
+          </div>
+
+          {showUsage && utilization && (
             <div className="grid gap-4 xl:grid-cols-2">
               <DashboardChart chart={utilization.frequency} variant="bar" />
               <DashboardChart
                 chart={utilization.distribution}
                 variant="distribution"
               />
-              <RankedList
-                title="Most frequently used vehicles"
-                rows={utilization.most_frequent}
-              />
-              <RankedList
-                title="Least utilized vehicles"
-                rows={utilization.least_utilized}
-              />
+              <RankedList title="Vehicles by trips" rows={sortedVehicles} />
             </div>
           )}
 
-          {drivers && (
+          {showDriver && drivers && (
             <>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {drivers.cards.map((card) => (
@@ -459,10 +582,7 @@ const VehicleReportsPage = () => {
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
                 <DashboardChart chart={drivers.utilization} variant="bar" />
-                <RankedList
-                  title="Driver trip assignments"
-                  rows={drivers.assignments}
-                />
+                <RankedList title="Drivers by assigned trips" rows={sortedDrivers} />
                 {drivers.can_view_drivers && (
                   <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
@@ -532,7 +652,7 @@ const VehicleReportsPage = () => {
 
           <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-              Vehicle bookings per office
+              Departments sorted by trips
             </h2>
             {offices.length === 0 ? (
               <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
@@ -552,7 +672,7 @@ const VehicleReportsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {offices.map((row) => (
+                    {sortedOffices.map((row) => (
                       <tr
                         key={row.office_id ?? row.office_name}
                         className="border-t border-slate-100 dark:border-slate-800"
@@ -573,7 +693,15 @@ const VehicleReportsPage = () => {
 
           <section className="rounded-2xl border border-[#1E3A5F]/15 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <h2 className="text-base font-semibold text-[#1E3A5F] dark:text-white">
-              Vehicle booking report
+              {reportKind === "driver"
+                ? "Driver assignments and trips"
+                : reportKind === "usage"
+                  ? "Vehicle usage bookings"
+                  : reportKind === "weekly"
+                    ? "Weekly vehicle bookings and trips"
+                    : reportKind === "monthly"
+                      ? "Monthly vehicle bookings and trips"
+                      : "Daily vehicle bookings and trips"}
             </h2>
             {bookings.length === 0 ? (
               <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">

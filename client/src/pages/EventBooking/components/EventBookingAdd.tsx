@@ -1,4 +1,5 @@
 import type { EventBookingFormData } from "../../../interfaces/EventBookingColumns";
+import type { EventBookingAttachmentDraft } from "./EventBookingForm";
 import type { VenueColumns } from "../../../interfaces/VenueColumns";
 import type { OfficeColumns } from "../../../interfaces/OfficeColumns";
 
@@ -9,8 +10,12 @@ interface EventBookingAddProps {
   offices: OfficeColumns[];
   onClose: () => void;
   // Must throw on failure so the form can show the server errors
-  onSubmit: (data: EventBookingFormData) => Promise<void>;
+  onSubmit: (
+    data: EventBookingFormData,
+    attachment: EventBookingAttachmentDraft,
+  ) => Promise<void>;
   isSubmitting?: boolean;
+  uploadProgress?: number | null;
 }
 
 const EventBookingAdd = ({
@@ -19,6 +24,7 @@ const EventBookingAdd = ({
   onClose,
   onSubmit,
   isSubmitting = false,
+  uploadProgress = null,
 }: EventBookingAddProps) => {
   return (
     <EventBookingForm
@@ -35,6 +41,7 @@ const EventBookingAdd = ({
       onClose={onClose}
       onSubmit={onSubmit}
       isSubmitting={isSubmitting}
+      uploadProgress={uploadProgress}
     />
   );
 };

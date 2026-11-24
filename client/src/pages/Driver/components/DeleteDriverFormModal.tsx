@@ -106,14 +106,14 @@ const DeleteDriverFormModal: FC<DeleteDriverFormModalProps> = ({
 
             {period && <p className="mt-1 text-xs text-gray-500">{period}</p>}
 
-            {driver.default_vehicle && (
+            {driver.contact_number && (
               <p className="mt-3 text-sm text-gray-500">
-                Usual vehicle:{" "}
-                <span className="font-medium text-gray-700">
-                  {driver.default_vehicle.vehicle_name} (
-                  {driver.default_vehicle.plate_number})
-                </span>
+                {driver.contact_number}
               </p>
+            )}
+
+            {driver.email && (
+              <p className="text-sm text-gray-500">{driver.email}</p>
             )}
           </div>
         </div>

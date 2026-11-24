@@ -6,7 +6,6 @@ import SubmitButton from "../../../components/Button/SubmitButton";
 import CloseButton from "../../../components/Button/CloseButton";
 import DriverService from "../../../services/DriverService";
 import type { DriverFieldErrors } from "../../../interfaces/DriverColumns";
-import type { VehicleColumns } from "../../../interfaces/VehicleColumns";
 import {
   buildDriverPayload,
   emptyDriverForm,
@@ -17,7 +16,6 @@ import { parseApiErrors } from "../../../interfaces/ApiErrorHelpers";
 import DriverFormFields, { DriverFormError } from "./DriverFormFields";
 
 interface AddDriverFormModalProps {
-  vehicles: VehicleColumns[];
   onDriverAdded: (message: string) => void;
   isOpen: boolean;
   onClose: () => void;
@@ -25,7 +23,6 @@ interface AddDriverFormModalProps {
 }
 
 const AddDriverFormModal: FC<AddDriverFormModalProps> = ({
-  vehicles,
   onDriverAdded,
   isOpen,
   onClose,
@@ -104,7 +101,7 @@ const AddDriverFormModal: FC<AddDriverFormModalProps> = ({
             <div>
               <h1 className="text-2xl font-bold text-[#003B5C]">Add Driver</h1>
               <p className="mt-1 text-sm text-gray-500">
-                Register a driver with their license, usual vehicle and current
+                Register a driver with their contact details and current
                 availability.
               </p>
             </div>
@@ -116,7 +113,6 @@ const AddDriverFormModal: FC<AddDriverFormModalProps> = ({
         <DriverFormFields
           values={form}
           errors={errors}
-          vehicles={vehicles}
           onChange={handleChange}
           autoFocus
         />

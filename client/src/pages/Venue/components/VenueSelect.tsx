@@ -2,7 +2,6 @@ import {
   FiAlertCircle,
   FiCheck,
   FiChevronDown,
-  FiClock,
   FiImage,
   FiMail,
   FiMapPin,
@@ -19,6 +18,16 @@ import { useEffect, useRef, useState } from "react";
 // ============================================================
 // VENUE THUMBNAIL (photo, or an icon when there is none / it fails to load)
 // ============================================================
+
+const isFcuGymVenue = (name?: string | null) => {
+  const normalized = (name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  return normalized === "fcu gym" || normalized === "gym";
+};
 
 const VenueThumb = ({
   venue,
@@ -246,10 +255,56 @@ const formatRate = (rate: number | string) =>
     minimumFractionDigits: 2,
   });
 
+interface BookingRate {
+  pricing_basis: "hourly" | "daily";
+  hourly_rate: string | null;
+  daily_rate: string | null;
+  overtime_rate: string | null;
+  overtime_policy: string | null;
+  included_hours: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  is_active: boolean;
+  charges?: Array<{
+    charge_name: string;
+    charge_type?: string;
+    amount: string;
+    unit: string;
+    is_active: boolean;
+  }>;
+}
+
+const activeRate = (rates: BookingRate[]) => {
+  const today = new Date().toISOString().slice(0, 10);
+  return rates
+    .filter((rate) => {
+      if (!rate.is_active || rate.effective_from > today) return false;
+      return !rate.effective_to || rate.effective_to >= today;
+    })
+    .sort((left, right) => right.effective_from.localeCompare(left.effective_from))[0];
+};
+
 export const VenueDetailsCard = ({ venue }: { venue: VenueColumns }) => {
   const facilities = venue.facilities ?? [];
   const hasPic =
     venue.person_in_charge || venue.pic_contact_number || venue.pic_email;
+  const [rates, setRates] = useState<BookingRate[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    VenueService.loadRates(venue.venue_id)
+      .then((response) => {
+        if (!cancelled) setRates(response.data.data ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [venue.venue_id]);
+
+  const rate = activeRate(rates);
 
   return (
     <div className="mt-4 overflow-hidden rounded-xl border border-[#0095D9]/20 bg-[#0095D9]/5 dark:bg-[#0095D9]/10">
@@ -298,21 +353,140 @@ export const VenueDetailsCard = ({ venue }: { venue: VenueColumns }) => {
           </p>
 
           <p className="flex items-center gap-2">
-            <FiClock className="shrink-0 text-[#0095D9]" />
-            Overtime: {formatRate(venue.overtime_rate)}
-          </p>
-
-          <p className="flex items-center gap-2">
             <FiPackage className="shrink-0 text-[#0095D9]" />
             {venue.resources?.length ?? 0} resources on record
           </p>
         </div>
 
-        {venue.overtime_policy && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            <span className="font-semibold">Overtime policy:</span>{" "}
-            {venue.overtime_policy}
+        {isFcuGymVenue(venue.venue) && (
+          <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              FCU Gym policy
+            </p>
+            <p>Monday, Tuesday, Thursday, and Friday: 6:00 AM–8:00 AM and 4:00 PM–6:00 PM.</p>
+            <p>Wednesday and Saturday: 6:00 AM–6:00 PM.</p>
+            <p>Sunday is not part of this schedule. University-wide activities are the exception.</p>
+            <p>Use is first come, first served. Whole-semester and whole-summer reservations are strongly discouraged.</p>
+            <p>The group must keep the Gym clean and protect its facilities and equipment. Negligent damage is charged to the organization, department, or group.</p>
+          </div>
+        )}
+
+        <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+          <p>
+            <span className="font-semibold">Booking rate: </span>
+            {rate
+              ? rate.pricing_basis === "hourly"
+                ? `${formatRate(rate.hourly_rate ?? 0)} per hour`
+                : `${formatRate(rate.daily_rate ?? 0)} per day`
+              : "Not yet configured"}
           </p>
+          <p>
+            <span className="font-semibold">Regular time: </span>
+            Monday to Friday, 8:00 AM to 5:00 PM
+          </p>
+          <p>
+            <span className="font-semibold">Overtime: </span>
+            {rate
+              ? `${formatRate(rate.overtime_rate ?? 0)} per hour on Saturday, Sunday, before 8:00 AM, and from 5:00 PM onward`
+              : "Not yet configured"}
+          </p>
+          <p>
+            <span className="font-semibold">Overtime note: </span>
+            {rate?.overtime_policy || "Monday to Friday, 8:00 AM to 5:00 PM is regular time. Saturday, Sunday, time before 8:00 AM, and time from 5:00 PM onward are overtime."}
+          </p>
+          <p>
+            <span className="font-semibold">Effective date: </span>
+            {rate?.effective_from ?? "Not yet configured"}
+          </p>
+        </div>
+
+        {rate && (rate.charges ?? []).some((charge) => charge.is_active && charge.unit === "per_overtime_hour") && (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Resource overtime rates
+            </p>
+            <ul className="list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+              {rate.charges
+                ?.filter((charge) => charge.is_active && charge.unit === "per_overtime_hour")
+                .map((charge) => (
+                  <li key={`${charge.charge_name}-overtime`}>
+                    {charge.charge_name}: {formatRate(charge.amount)} per overtime hour
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
+
+        {(venue.maintenance ?? []).some((row) => row.status === "scheduled") && (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Scheduled maintenance
+            </p>
+            <ul className="list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+              {venue.maintenance
+                ?.filter((row) => row.status === "scheduled")
+                .map((row) => (
+                  <li key={row.maintenance_id}>
+                    {row.reason}
+                    {row.range_label
+                      ? ` · ${row.range_label}`
+                      : ` · ${row.date_start.slice(0, 10)} to ${row.date_end.slice(0, 10)}`}
+                    {row.notes ? ` · ${row.notes}` : ""}
+                  </li>
+                ))}
+            </ul>
+            <p className="mt-1 text-xs text-gray-500">
+              This venue cannot be booked on these dates.
+            </p>
+          </div>
+        )}
+
+        {(venue.resources ?? []).length > 0 && (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Available resources
+            </p>
+            <ul className="list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+              {venue.resources?.map((resource) => (
+                <li key={resource.resource_id}>
+                  {resource.resource_name}
+                  {resource.total_quantity !== null
+                    ? ` · ${resource.total_quantity.toLocaleString()} available`
+                    : ""}
+                  {resource.condition !== "not_applicable"
+                    ? ` · ${resource.condition.replaceAll("_", " ")}`
+                    : ""}
+                  {resource.availability_type !== "available"
+                    ? ` · ${resource.availability_type.replaceAll("_", " ")}`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {rate && (rate.charges ?? []).some((charge) => charge.is_active && charge.unit !== "per_overtime_hour") && (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Additional charges
+            </p>
+            <ul className="list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+              {rate.charges
+                ?.filter((charge) => charge.is_active && charge.unit !== "per_overtime_hour")
+                .map((charge) => (
+                  <li key={`${charge.charge_name}-${charge.unit}`}>
+                    {charge.charge_type === "equipment"
+                      ? "Equipment"
+                      : charge.charge_type === "service"
+                        ? "Additional service"
+                        : "Additional facility"}
+                    {" · "}
+                    {charge.charge_name}: {formatRate(charge.amount)}{" "}
+                    {charge.unit.replaceAll("_", " ")}
+                  </li>
+                ))}
+            </ul>
+          </div>
         )}
 
         {hasPic && (

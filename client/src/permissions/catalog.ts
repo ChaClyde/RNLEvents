@@ -53,6 +53,7 @@ export const permissionCatalog: Record<
     ...crud("roles"),
     ...crud("offices"),
     ...crud("venues"),
+    ...crud("venue_rates"),
     ...crud("events"),
     ...crud("vehicles"),
     ...crud("drivers"),
@@ -60,6 +61,7 @@ export const permissionCatalog: Record<
     [Permission.EVENT_BOOKINGS_VIEW]: global(),
     [Permission.EVENT_BOOKINGS_EDIT]: global(),
     [Permission.EVENT_BOOKINGS_DELETE]: global(),
+    [Permission.EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE]: global(),
     [Permission.EVENT_BOOKINGS_CREATE]: global({
       requiresEmergencyBypass: true,
     }),
@@ -97,9 +99,11 @@ export const permissionCatalog: Record<
 
   [RoleSlug.EVENT_ADMIN]: {
     ...crud("venues"),
+    ...crud("venue_rates"),
     ...crud("events"),
     [Permission.DASHBOARD_VIEW]: global(),
     [Permission.EVENT_BOOKINGS_VIEW]: global(),
+    [Permission.EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE]: global(),
     [Permission.EVENT_APPROVALS_VIEW]: global(),
     [Permission.EVENT_APPROVALS_APPROVE]: global({
       approvalPipeline: ApprovalPipeline.EVENT,
@@ -125,26 +129,33 @@ export const permissionCatalog: Record<
     [Permission.REPORTS_VIEW_VEHICLE]: global(),
   },
 
-  [RoleSlug.EVENT_APPROVAL_ADMIN]: {
+  [RoleSlug.ADMIN_APPROVALS]: {
     [Permission.DASHBOARD_VIEW]: global(),
+    [Permission.EVENTS_VIEW]: global(),
     [Permission.EVENT_BOOKINGS_VIEW]: global(),
     [Permission.EVENT_APPROVALS_VIEW]: global(),
     [Permission.EVENT_APPROVALS_APPROVE]: global({
       approvalPipeline: ApprovalPipeline.EVENT,
       approvalStages: [ApprovalStage.EVENT_APPROVAL],
     }),
-    [Permission.MESSENGER_VIEW]: global(),
-    [Permission.REPORTS_VIEW]: global({ limited: true }),
-    [Permission.REPORTS_VIEW_EVENT]: global({ limited: true }),
-  },
-
-  [RoleSlug.VEHICLE_APPROVAL_ADMIN]: {
-    [Permission.DASHBOARD_VIEW]: global(),
     [Permission.VEHICLE_BOOKINGS_VIEW]: global(),
     [Permission.VEHICLE_APPROVALS_VIEW]: global(),
     [Permission.VEHICLE_APPROVALS_APPROVE]: global({
       approvalPipeline: ApprovalPipeline.VEHICLE,
       approvalStages: [ApprovalStage.VEHICLE_APPROVAL],
+    }),
+    [Permission.MESSENGER_VIEW]: global(),
+    [Permission.REPORTS_VIEW]: global({ limited: true }),
+    [Permission.REPORTS_VIEW_EVENT]: global({ limited: true }),
+  },
+
+  [RoleSlug.OIC_BUDGET]: {
+    [Permission.DASHBOARD_VIEW]: global(),
+    [Permission.VEHICLE_BOOKINGS_VIEW]: global(),
+    [Permission.VEHICLE_APPROVALS_VIEW]: global(),
+    [Permission.VEHICLE_APPROVALS_APPROVE]: global({
+      approvalPipeline: ApprovalPipeline.VEHICLE,
+      approvalStages: [ApprovalStage.OIC_BUDGET],
     }),
     [Permission.MESSENGER_VIEW]: global(),
     [Permission.REPORTS_VIEW]: global({ limited: true }),
@@ -154,6 +165,7 @@ export const permissionCatalog: Record<
   [RoleSlug.DEAN_OFFICE_HEAD]: {
     ...crud("users", PermissionScope.OFFICE),
     [Permission.DASHBOARD_VIEW]: global(),
+    [Permission.EVENTS_VIEW]: office(),
     [Permission.EVENT_BOOKINGS_VIEW]: office({ optional: true }),
     [Permission.EVENT_BOOKINGS_CREATE]: office({ optional: true }),
     [Permission.EVENT_BOOKINGS_EDIT]: office({ optional: true }),
@@ -179,6 +191,7 @@ export const permissionCatalog: Record<
 
   [RoleSlug.FACULTY_STAFF]: {
     [Permission.DASHBOARD_VIEW]: global(),
+    [Permission.EVENTS_VIEW]: own(),
     [Permission.EVENT_BOOKINGS_VIEW]: own(),
     [Permission.EVENT_BOOKINGS_CREATE]: global(),
     [Permission.EVENT_BOOKINGS_EDIT]: own(),
@@ -194,6 +207,7 @@ export const permissionCatalog: Record<
 
   [RoleSlug.STUDENT_REPUBLIC]: {
     [Permission.DASHBOARD_VIEW]: global(),
+    [Permission.EVENTS_VIEW]: own(),
     [Permission.EVENT_BOOKINGS_VIEW]: own(),
     [Permission.EVENT_BOOKINGS_CREATE]: global(),
     [Permission.EVENT_BOOKINGS_EDIT]: own(),

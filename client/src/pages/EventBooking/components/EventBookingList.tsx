@@ -16,6 +16,7 @@ import {
   FiMail,
   FiPhone,
   FiMap,
+  FiFile,
 } from "react-icons/fi";
 
 import type { EventBookingColumns } from "../../../interfaces/EventBookingColumns";
@@ -241,6 +242,12 @@ const EventBookingList = ({
                       <h3 className="mt-1 line-clamp-2 text-lg font-bold text-white">
                         {booking.purpose}
                       </h3>
+                      {(booking.attachments?.length ?? 0) > 0 ? (
+                        <p className="mt-2 inline-flex items-center gap-1 text-xs text-white/80">
+                          <FiFile size={12} />
+                          Letter attached
+                        </p>
+                      ) : null}
                     </div>
 
                     <span

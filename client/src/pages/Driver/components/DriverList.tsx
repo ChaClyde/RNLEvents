@@ -15,10 +15,8 @@ import {
   type DriverStatus,
 } from "../../../interfaces/DriverColumns";
 import {
-  formatDriverDate,
   getAvailabilityPeriod,
   getDriverStatusStyle,
-  getLicenseState,
 } from "../../../interfaces/DriverHelpers";
 
 interface DriverListProps {
@@ -29,7 +27,7 @@ interface DriverListProps {
   onDeleteDriver: (driver: DriverColumns) => void;
 }
 
-const COLUMN_COUNT = 7;
+const COLUMN_COUNT = 5;
 
 const DriverList: FC<DriverListProps> = ({
   drivers,
@@ -49,13 +47,7 @@ const DriverList: FC<DriverListProps> = ({
         query === "" ||
         driver.driver_name.toLowerCase().includes(query) ||
         (driver.contact_number ?? "").toLowerCase().includes(query) ||
-        (driver.license_number ?? "").toLowerCase().includes(query) ||
-        (driver.default_vehicle?.vehicle_name ?? "")
-          .toLowerCase()
-          .includes(query) ||
-        (driver.default_vehicle?.plate_number ?? "")
-          .toLowerCase()
-          .includes(query);
+        (driver.email ?? "").toLowerCase().includes(query);
 
       const matchesStatus =
         statusFilter === "all" || driver.driver_status === statusFilter;
@@ -81,7 +73,7 @@ const DriverList: FC<DriverListProps> = ({
                 Driver Management
               </h1>
               <p className="mt-1 text-gray-500">
-                Manage drivers, their licenses and their availability.
+                Manage drivers and their availability.
               </p>
             </div>
           </div>
@@ -103,7 +95,7 @@ const DriverList: FC<DriverListProps> = ({
           <Search size={18} className="text-gray-400" />
           <input
             type="text"
-            placeholder="Search name, contact, license or vehicle..."
+            placeholder="Search name, contact or email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-gray-900 outline-none"
@@ -142,12 +134,6 @@ const DriverList: FC<DriverListProps> = ({
                   CONTACT
                 </TableCell>
                 <TableCell isHeader className="px-5 py-3 text-start">
-                  LICENSE
-                </TableCell>
-                <TableCell isHeader className="px-5 py-3 text-start">
-                  USUAL VEHICLE
-                </TableCell>
-                <TableCell isHeader className="px-5 py-3 text-start">
                   AVAILABILITY
                 </TableCell>
                 <TableCell isHeader className="px-5 py-3 text-start">
@@ -177,7 +163,6 @@ const DriverList: FC<DriverListProps> = ({
                 </TableRow>
               ) : (
                 filteredDrivers.map((driver, index) => {
-                  const licenseState = getLicenseState(driver);
                   const period = getAvailabilityPeriod(driver);
 
                   return (
@@ -193,11 +178,6 @@ const DriverList: FC<DriverListProps> = ({
                         <p className="font-medium text-gray-900">
                           {driver.driver_name}
                         </p>
-                        {driver.is_reliever && (
-                          <span className="mt-1 inline-block rounded-full bg-[#003B5C]/10 px-2 py-0.5 text-xs font-medium text-[#003B5C]">
-                            Reliever
-                          </span>
-                        )}
                       </TableCell>
 
                       <TableCell className="px-4 py-3 text-gray-500">
@@ -206,46 +186,6 @@ const DriverList: FC<DriverListProps> = ({
                           <p className="text-xs text-gray-400">
                             {driver.email}
                           </p>
-                        )}
-                      </TableCell>
-
-                      <TableCell className="px-4 py-3">
-                        {licenseState === "none" ? (
-                          <span className="text-gray-400">
-                            {driver.license_number || "—"}
-                          </span>
-                        ) : (
-                          <div>
-                            <p className="text-gray-700">
-                              {driver.license_number || "—"}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              Expires {formatDriverDate(driver.license_expiry)}
-                            </p>
-                            {licenseState === "expired" && (
-                              <span className="mt-1 inline-block rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
-                                Expired
-                              </span>
-                            )}
-                            {licenseState === "expiring" && (
-                              <span className="mt-1 inline-block rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-600">
-                                Expiring soon
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </TableCell>
-
-                      <TableCell className="px-4 py-3 text-gray-600">
-                        {driver.default_vehicle ? (
-                          <div>
-                            <p>{driver.default_vehicle.vehicle_name}</p>
-                            <p className="text-xs text-gray-400">
-                              {driver.default_vehicle.plate_number}
-                            </p>
-                          </div>
-                        ) : (
-                          "—"
                         )}
                       </TableCell>
 

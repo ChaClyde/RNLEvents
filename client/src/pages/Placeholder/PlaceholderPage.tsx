@@ -2,9 +2,7 @@ import { useLocation } from "react-router-dom";
 
 const titles: Record<string, string> = {
   "/profile": "My Profile",
-  "/system-history": "System History",
   "/audit-logs": "Audit Logs",
-  "/messenger": "Messenger",
   "/announcements": "Announcements",
   "/settings": "System Settings",
   "/vehicle-bookings": "Vehicle Booking List",

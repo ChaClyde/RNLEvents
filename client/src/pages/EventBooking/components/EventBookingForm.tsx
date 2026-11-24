@@ -10,11 +10,14 @@ import {
   FiSave,
   FiAlertCircle,
   FiCheckCircle,
+  FiFile,
+  FiTrash2,
 } from "react-icons/fi";
 
 import type {
   ConflictSuggestion,
   EventBookingColumns,
+  EventBookingFeeSnapshot,
   EventBookingFormData,
   EventBookingResourceInput,
   VenueConflict,
@@ -29,11 +32,18 @@ import {
   buildInitialSchedule,
   buildOccurrences,
   buildSchedulePayload,
+  bookingWindowError,
+  maintenanceBookingError,
   validateSchedule,
   type ScheduleState,
   type TimeRange,
 } from "../../../interfaces/EventBookingSchedule";
 import EventBookingService from "../../../services/EventBookingService";
+import SignatureService from "../../../services/SignatureService";
+import { Link } from "react-router-dom";
+import { Permission, RoleSlug } from "../../../permissions";
+import { usePermissions } from "../../../hooks/usePermissions";
+import { useAuth } from "../../../contexts/AuthContext";
 import VenueSelect, {
   VenueDetailsCard,
 } from "../../Venue/components/VenueSelect";
@@ -42,9 +52,39 @@ import SchedulePicker from "./SchedulePicker";
 import ScheduleConflictPanel from "./ScheduleConflictPanel";
 import VenueCalendarModal from "./VenueCalendarModal";
 
-// ============================================================
-// PROPS
-// ============================================================
+const isFcuGym = (name?: string | null) => {
+  const normalized = (name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  return normalized === "fcu gym" || normalized === "gym";
+};
+
+const GYM_RESPONSIBILITIES = [
+  "Maintain cleanliness.",
+  "Protect facilities and equipment.",
+  "Negligent damage will be charged to the responsible organization, department, or group.",
+];
+
+const ACCEPTED_ATTACHMENT_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+];
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+export interface EventBookingAttachmentDraft {
+  file: File | null;
+  removeExisting: boolean;
+}
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 interface EventBookingFormProps {
   title: string;
@@ -62,8 +102,12 @@ interface EventBookingFormProps {
 
   onClose: () => void;
   // Must throw on failure so this form can show the server errors
-  onSubmit: (data: EventBookingFormData) => Promise<void>;
+  onSubmit: (
+    data: EventBookingFormData,
+    attachment: EventBookingAttachmentDraft,
+  ) => Promise<void>;
   isSubmitting?: boolean;
+  uploadProgress?: number | null;
 }
 
 // ============================================================
@@ -88,12 +132,14 @@ type FormState = ReturnType<typeof buildInitialState>;
 const buildInitialResources = (
   booking?: EventBookingColumns | null,
 ): EventBookingResourceInput[] =>
-  (booking?.resources ?? []).map((resource) => ({
-    resource_id: resource.resource_id,
-    resource_name: resource.resource_name,
-    quantity: resource.quantity,
-    notes: resource.notes,
-  }));
+  (booking?.resources ?? [])
+    .filter((resource) => resource.resource_id !== null)
+    .map((resource) => ({
+      resource_id: resource.resource_id,
+      resource_name: resource.resource_name,
+      quantity: resource.quantity,
+      notes: resource.notes,
+    }));
 
 // Error keys that belong to the schedule section
 const isScheduleErrorKey = (key: string) =>
@@ -151,7 +197,13 @@ const EventBookingForm = ({
   onClose,
   onSubmit,
   isSubmitting = false,
+  uploadProgress = null,
 }: EventBookingFormProps) => {
+  const { user } = useAuth();
+  const { can } = usePermissions();
+  const canDesignateUniversityWide = can(
+    Permission.EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE,
+  );
   const [formData, setFormData] = useState<FormState>(() =>
     buildInitialState(booking),
   );
@@ -163,8 +215,30 @@ const EventBookingForm = ({
   );
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (booking || !user?.office_id) return;
+
+    setFormData((previous) => ({
+      ...previous,
+      office_id: String(user.office_id),
+    }));
+  }, [booking, user?.office_id]);
+
   const [serverError, setServerError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [feeQuote, setFeeQuote] = useState<EventBookingFeeSnapshot | null>(null);
+  const signsOnSubmit =
+    user?.role?.slug === RoleSlug.FACULTY_STAFF ||
+    user?.role?.slug === RoleSlug.STUDENT_REPUBLIC;
+  const [hasSignature, setHasSignature] = useState(true);
+
+  useEffect(() => {
+    if (!signsOnSubmit) return;
+    void SignatureService.show()
+      .then((response) => setHasSignature(Boolean(response.data.data.has_signature)))
+      .catch(() => setHasSignature(false));
+  }, [signsOnSubmit]);
 
   // Conflict check
   const [conflicts, setConflicts] = useState<VenueConflict[]>([]);
@@ -172,8 +246,28 @@ const EventBookingForm = ({
   const [checking, setChecking] = useState(false);
   const checkId = useRef(0);
 
+  const [scheduleRestrictions, setScheduleRestrictions] = useState<string[]>([]);
+  const [reservationSpan, setReservationSpan] = useState<
+    "standard" | "whole_semester" | "whole_summer"
+  >(
+    booking?.reservation_span === "whole_semester" ||
+      booking?.reservation_span === "whole_summer"
+      ? booking.reservation_span
+      : "standard",
+  );
+  const [responsibilitiesAcknowledged, setResponsibilitiesAcknowledged] =
+    useState(Boolean(booking?.gym_responsibilities_acknowledged));
+  const [universityWide, setUniversityWide] = useState(
+    Boolean(booking?.university_wide_activity) && canDesignateUniversityWide,
+  );
   const [scheduleNote, setScheduleNote] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState("");
+  const [removeExistingAttachment, setRemoveExistingAttachment] =
+    useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
+  const existingAttachment = booking?.attachments?.[0] ?? null;
 
   const today = getToday();
 
@@ -195,15 +289,24 @@ const EventBookingForm = ({
     [venueOptions, booking?.venue_id],
   );
 
-  const activeOffices = useMemo(
-    () =>
-      offices.filter(
-        (office) =>
-          (office.status === "active" && !office.is_deleted) ||
-          office.office_id === booking?.office_id,
-      ),
-    [offices, booking?.office_id],
-  );
+  const recognizedOffice = useMemo(() => {
+    const officeId = booking?.office_id ?? user?.office_id;
+    const fromList = offices.find((office) => office.office_id === officeId);
+
+    if (fromList) {
+      return fromList.office_code
+        ? `${fromList.office_name} (${fromList.office_code})`
+        : fromList.office_name;
+    }
+
+    if (user?.office && user.office.office_id === officeId) {
+      return user.office.office_code
+        ? `${user.office.office_name} (${user.office.office_code})`
+        : user.office.office_name;
+    }
+
+    return "No office is assigned to your account";
+  }, [booking?.office_id, offices, user]);
 
   const selectedVenue = useMemo(
     () =>
@@ -212,6 +315,7 @@ const EventBookingForm = ({
       ) ?? null,
     [venueOptions, formData.venue_id],
   );
+  const gymBooking = isFcuGym(selectedVenue?.venue);
 
   // --------------------------------------
   // SCHEDULE (derived)
@@ -224,10 +328,21 @@ const EventBookingForm = ({
     [schedule, occurrences],
   );
 
-  const scheduleErrors = useMemo(
-    () => validateSchedule(schedule, occurrences, today),
-    [schedule, occurrences, today],
-  );
+  const scheduleErrors = useMemo(() => {
+    const next = validateSchedule(schedule, occurrences, today);
+    const windowError = bookingWindowError(occurrences, gymBooking);
+
+    if (windowError) next.time_start = windowError;
+
+    const closed = maintenanceBookingError(
+      selectedVenue?.maintenance,
+      occurrences,
+    );
+
+    if (closed) next.venue_id = closed;
+
+    return next;
+  }, [schedule, occurrences, today, gymBooking, selectedVenue]);
 
   const scheduleReady = Object.keys(scheduleErrors).length === 0;
 
@@ -254,6 +369,8 @@ const EventBookingForm = ({
     venue: formData.venue_id,
     schedule: schedulePayload,
     ready: scheduleReady,
+    universityWide,
+    reservationSpan,
   });
 
   useEffect(() => {
@@ -274,18 +391,22 @@ const EventBookingForm = ({
           ...schedulePayload,
           venue_id: Number(formData.venue_id),
           exclude_event_booking_id: booking?.event_booking_id,
+          university_wide_activity: universityWide,
+          reservation_span: reservationSpan,
         });
 
         if (id !== checkId.current) return;
 
         setConflicts(response.data.conflicts ?? []);
         setSuggestions(response.data.suggestions ?? []);
+        setScheduleRestrictions(response.data.schedule_restrictions ?? []);
       } catch {
         // The server checks again on submit, so a failed dry run is not blocking
         if (id !== checkId.current) return;
 
         setConflicts([]);
         setSuggestions([]);
+        setScheduleRestrictions([]);
       } finally {
         if (id === checkId.current) setChecking(false);
       }
@@ -293,7 +414,34 @@ const EventBookingForm = ({
 
     return () => window.clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkKey, booking?.event_booking_id]);
+  }, [checkKey, booking?.event_booking_id, universityWide, reservationSpan]);
+
+  useEffect(() => {
+    if (!formData.venue_id || !scheduleReady) {
+      setFeeQuote(null);
+      return;
+    }
+
+    const handle = window.setTimeout(async () => {
+      try {
+        const response = await EventBookingService.previewFee({
+          ...schedulePayload,
+          venue_id: Number(formData.venue_id),
+          resources: resources
+            .filter((resource) => resource.resource_id)
+            .map((resource) => ({
+              resource_id: Number(resource.resource_id),
+              quantity: Number(resource.quantity || 1),
+            })),
+        });
+        setFeeQuote(response.data.data);
+      } catch {
+        setFeeQuote(null);
+      }
+    }, 400);
+
+    return () => window.clearTimeout(handle);
+  }, [checkKey, resources, formData.venue_id, schedulePayload, scheduleReady]);
 
   // Server messages about resources ("resources.0.quantity", ...)
   const resourceServerErrors = Object.entries(errors)
@@ -430,10 +578,6 @@ const EventBookingForm = ({
         return true;
       }
 
-      if (resource.resource_id === null) {
-        return !resource.resource_name.trim();
-      }
-
       const venueResource = selectedVenue?.resources?.find(
         (item) => item.resource_id === resource.resource_id,
       );
@@ -454,7 +598,7 @@ const EventBookingForm = ({
     }
 
     if (!formData.office_id) {
-      newErrors.office_id = "Please select a requesting office.";
+      newErrors.office_id = "Your account has no office assigned.";
     }
 
     if (!formData.email.trim()) {
@@ -465,6 +609,11 @@ const EventBookingForm = ({
 
     if (!formData.tel_number.trim()) {
       newErrors.tel_number = "Contact number is required.";
+    }
+
+    if (gymBooking && !responsibilitiesAcknowledged) {
+      newErrors.gym_responsibilities_acknowledged =
+        "Acknowledge the Gym responsibilities before submitting.";
     }
 
     setErrors(newErrors);
@@ -483,6 +632,13 @@ const EventBookingForm = ({
 
     if (!validateForm()) return;
 
+    if (signsOnSubmit && !hasSignature) {
+      setServerError(
+        "Save your e-signature in My Profile. It is attached automatically when you submit this booking.",
+      );
+      return;
+    }
+
     if (checking) {
       setServerError("Still checking the venue schedule. Please try again.");
       return;
@@ -492,6 +648,11 @@ const EventBookingForm = ({
       setServerError(
         "The venue is already booked on some of your dates. Pick another date or change the time.",
       );
+      return;
+    }
+
+    if (scheduleRestrictions.length > 0) {
+      setServerError(scheduleRestrictions[0]);
       return;
     }
 
@@ -505,7 +666,9 @@ const EventBookingForm = ({
 
       expected_attendees: Number(formData.expected_attendees),
 
-      resources: resources.map((resource) => ({
+      resources: resources
+        .filter((resource) => resource.resource_id !== null)
+        .map((resource) => ({
         resource_id: resource.resource_id,
         resource_name: resource.resource_name.trim(),
         quantity: resource.quantity,
@@ -517,10 +680,17 @@ const EventBookingForm = ({
 
       email: formData.email.trim(),
       tel_number: formData.tel_number.trim(),
+      university_wide_activity: gymBooking && universityWide,
+      reservation_span: gymBooking ? reservationSpan : "standard",
+      gym_responsibilities_acknowledged:
+        gymBooking && responsibilitiesAcknowledged,
     };
 
     try {
-      await onSubmit(payload);
+      await onSubmit(payload, {
+        file: attachmentFile,
+        removeExisting: removeExistingAttachment,
+      });
     } catch (error) {
       const { status, message, fieldErrors } = parseApiError(
         error,
@@ -569,6 +739,16 @@ const EventBookingForm = ({
           </button>
         </div>
 
+        {signsOnSubmit && !hasSignature && (
+          <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-800">
+            Save your e-signature in{" "}
+            <Link to="/profile" className="font-semibold underline">
+              My Profile
+            </Link>{" "}
+            before booking. It is placed on the booking slip automatically.
+          </div>
+        )}
+
         {/* SERVER ERROR */}
         {serverError && (
           <div className="flex items-start gap-2 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
@@ -603,7 +783,7 @@ const EventBookingForm = ({
                 onChange={handleVenueChange}
                 allowedUnavailableId={booking?.venue_id}
                 disabled={isSubmitting}
-                error={errors.venue_id}
+                error={scheduleErrors.venue_id || errors.venue_id}
               />
 
               {!hasSelectableVenue && (
@@ -613,6 +793,122 @@ const EventBookingForm = ({
               )}
 
               {selectedVenue && <VenueDetailsCard venue={selectedVenue} />}
+              {gymBooking && (
+                <div className="mt-3 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <p className="font-semibold">FCU Gym schedule</p>
+                  <p>Monday, Tuesday, Thursday, and Friday: 6:00 AM–8:00 AM and 4:00 PM–6:00 PM.</p>
+                  <p>Wednesday and Saturday: 6:00 AM–6:00 PM.</p>
+                  <p>Sunday is not part of the permitted Gym schedule.</p>
+                  <p>Use is first come, first served. A whole-semester or whole-summer reservation is strongly discouraged.</p>
+                  <label className="block">
+                    Reservation length
+                    <select
+                      value={reservationSpan}
+                      onChange={(event) =>
+                        setReservationSpan(
+                          event.target.value as
+                            | "standard"
+                            | "whole_semester"
+                            | "whole_summer",
+                        )
+                      }
+                      className="mt-1 w-full rounded-lg border px-3 py-2"
+                    >
+                      <option value="standard">Selected dates</option>
+                      <option value="whole_semester">Whole semester</option>
+                      <option value="whole_summer">Whole summer</option>
+                    </select>
+                  </label>
+                  {reservationSpan === "whole_semester" && (
+                    <p>A whole-semester Gym reservation is strongly discouraged. The request can still be submitted.</p>
+                  )}
+                  {reservationSpan === "whole_summer" && (
+                    <p>A whole-summer Gym reservation is strongly discouraged. The request can still be submitted.</p>
+                  )}
+                  <div>
+                    <p className="font-semibold">Responsibilities</p>
+                    <ul className="mt-1 list-disc pl-5">
+                      {GYM_RESPONSIBILITIES.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                    <label className="mt-2 flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={responsibilitiesAcknowledged}
+                        onChange={(event) =>
+                          setResponsibilitiesAcknowledged(event.target.checked)
+                        }
+                        className="mt-1"
+                      />
+                      <span>I acknowledge these responsibilities for this Gym booking.</span>
+                    </label>
+                    <ErrorMessage message={errors.gym_responsibilities_acknowledged} />
+                  </div>
+                  {canDesignateUniversityWide && (
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={universityWide}
+                        onChange={(event) => setUniversityWide(event.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>This is a University-wide activity. The permitted Gym schedule does not apply.</span>
+                    </label>
+                  )}
+                  {scheduleRestrictions.length > 0 && !universityWide && (
+                    <p>{scheduleRestrictions[0]}</p>
+                  )}
+                </div>
+              )}
+              {feeQuote && (
+                <div className="mt-3 rounded-xl bg-gray-50 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  <p className="font-semibold text-gray-800 dark:text-gray-100">
+                    Estimated charges
+                  </p>
+                  {(
+                    [
+                      ["venue", "Base facility rental"],
+                      ["overtime", "Overtime"],
+                      ["facility", "Additional facility charges"],
+                      ["equipment", "Equipment charges"],
+                      ["service", "Additional service charges"],
+                      ["additional", "Other additional charges"],
+                    ] as const
+                  ).map(([type, label]) => {
+                    const amount = (feeQuote.lines ?? [])
+                      .filter((line) => line.line_type === type)
+                      .reduce((sum, line) => sum + Number(line.line_amount), 0);
+                    const shown =
+                      feeQuote.total_amount == null
+                        ? "Not yet configured"
+                        : amount.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          });
+                    return (
+                      <p key={type} className="mt-1 flex justify-between gap-3">
+                        <span>{label}</span>
+                        <span>{shown}</span>
+                      </p>
+                    );
+                  })}
+                  <p className="mt-2 flex justify-between gap-3 font-semibold text-gray-800 dark:text-gray-100">
+                    <span>Estimated total</span>
+                    <span>
+                      {feeQuote.total_amount == null
+                        ? "Not yet configured"
+                        : Number(feeQuote.total_amount).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {feeQuote.calculation_note} This is a server estimate. It is not a finance-verified fee, and a later rate change does not change a booking that was already saved.
+                  </p>
+                </div>
+              )}
             </section>
 
             {/* EVENT DETAILS */}
@@ -693,8 +989,16 @@ const EventBookingForm = ({
                 onChange={handleScheduleChange}
                 occurrences={occurrences}
                 conflictDates={conflictDates}
-                errors={errors}
-                extraMessages={scheduleServerMessages}
+                errors={{ ...errors, ...scheduleErrors }}
+                extraMessages={[
+                  ...scheduleServerMessages,
+                  ...(gymBooking ? [] : scheduleRestrictions),
+                ]}
+                timeHint={
+                  gymBooking
+                    ? undefined
+                    : "Bookings are allowed only from 7:00 AM to 10:00 PM."
+                }
                 today={today}
                 disabled={isSubmitting}
               />
@@ -818,24 +1122,18 @@ const EventBookingForm = ({
                 </div>
 
                 <div>
-                  <label className={labelClass}>
-                    Requesting Office <span className="text-red-500">*</span>
-                  </label>
+                  <label className={labelClass}>Requesting Office</label>
 
-                  <select
-                    value={formData.office_id}
-                    onChange={(e) => handleChange("office_id", e.target.value)}
+                  <input
+                    type="text"
+                    value={recognizedOffice}
+                    readOnly
                     className={inputClass}
-                    disabled={isSubmitting}
-                  >
-                    <option value="">Select office</option>
+                  />
 
-                    {activeOffices.map((office) => (
-                      <option key={office.office_id} value={office.office_id}>
-                        {office.office_name}
-                      </option>
-                    ))}
-                  </select>
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    Taken from the office on your account.
+                  </p>
 
                   <ErrorMessage message={errors.office_id} />
                 </div>
@@ -876,6 +1174,123 @@ const EventBookingForm = ({
                   <ErrorMessage message={errors.tel_number} />
                 </div>
               </div>
+            </section>
+
+            <section className={sectionClass}>
+              <h3 className="mb-4 flex items-center gap-2 font-bold text-gray-900 dark:text-white">
+                <FiFile className="text-[#0095D9]" />
+                Letter of Request
+              </h3>
+              <p className="mb-3 text-sm text-gray-500 dark:text-gray-400">
+                Attach a PDF, JPG, or PNG up to 5 MB. You can replace or remove
+                it before submitting this request.
+              </p>
+
+              {existingAttachment && !removeExistingAttachment && !attachmentFile ? (
+                <div className="mb-3 rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700">
+                  <p className="font-semibold text-gray-800 dark:text-gray-100">
+                    {existingAttachment.original_filename}
+                  </p>
+                  <p className="text-gray-500">
+                    {formatFileSize(existingAttachment.file_size)}
+                  </p>
+                </div>
+              ) : null}
+
+              {attachmentFile ? (
+                <div className="mb-3 rounded-xl border border-[#0095D9]/30 bg-[#0095D9]/5 p-3 text-sm">
+                  <p className="font-semibold text-[#003B5C] dark:text-white">
+                    {attachmentFile.name}
+                  </p>
+                  <p className="text-gray-500">
+                    {formatFileSize(attachmentFile.size)}
+                  </p>
+                  {attachmentFile.type.startsWith("image/") && attachmentPreviewUrl ? (
+                    <img
+                      src={attachmentPreviewUrl}
+                      alt="Letter preview"
+                      className="mt-3 max-h-48 rounded-lg border border-gray-200"
+                    />
+                  ) : null}
+                  {attachmentFile.type === "application/pdf" && attachmentPreviewUrl ? (
+                    <iframe
+                      title="Letter preview"
+                      src={attachmentPreviewUrl}
+                      className="mt-3 h-56 w-full rounded-lg border border-gray-200"
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+
+              {uploadProgress !== null ? (
+                <div className="mb-3">
+                  <div className="mb-1 text-xs font-medium text-[#00679E]">
+                    Uploading letter... {uploadProgress}%
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full bg-[#0095D9]"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                <label className="cursor-pointer rounded-xl bg-[#00679E] px-4 py-2 text-sm font-semibold text-white">
+                  {attachmentFile || existingAttachment
+                    ? "Replace letter"
+                    : "Upload letter"}
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                    className="hidden"
+                    disabled={isSubmitting}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      event.target.value = "";
+                      if (!file) return;
+                      const allowed =
+                        ACCEPTED_ATTACHMENT_TYPES.includes(file.type) ||
+                        /\.(pdf|jpe?g|png)$/i.test(file.name);
+                      if (!allowed) {
+                        setAttachmentError("Use a PDF, JPG, or PNG file.");
+                        return;
+                      }
+                      if (file.size > MAX_ATTACHMENT_BYTES) {
+                        setAttachmentError("The letter must be 5 MB or smaller.");
+                        return;
+                      }
+                      if (attachmentPreviewUrl) {
+                        URL.revokeObjectURL(attachmentPreviewUrl);
+                      }
+                      setAttachmentError("");
+                      setAttachmentFile(file);
+                      setAttachmentPreviewUrl(URL.createObjectURL(file));
+                      setRemoveExistingAttachment(false);
+                    }}
+                  />
+                </label>
+                {attachmentFile || (existingAttachment && !removeExistingAttachment) ? (
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      if (attachmentPreviewUrl) {
+                        URL.revokeObjectURL(attachmentPreviewUrl);
+                      }
+                      setAttachmentFile(null);
+                      setAttachmentPreviewUrl("");
+                      setRemoveExistingAttachment(Boolean(existingAttachment));
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600"
+                  >
+                    <FiTrash2 size={14} />
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+              <ErrorMessage message={attachmentError} />
             </section>
 
             {/* NOTICE */}

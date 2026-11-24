@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { FiFile, FiDownload, FiPrinter } from "react-icons/fi";
 import {
   FiX,
   FiCalendar,
@@ -12,7 +13,57 @@ import {
   FiCheckCircle,
 } from "react-icons/fi";
 
-import type { EventBookingColumns } from "../../../interfaces/EventBookingColumns";
+import type {
+  EventBookingColumns,
+  EventBookingFeeLine,
+} from "../../../interfaces/EventBookingColumns";
+import EventBookingService from "../../../services/EventBookingService";
+import SignatureService from "../../../services/SignatureService";
+import { Link } from "react-router-dom";
+
+const feeCategory = (type: string) => {
+  switch (type) {
+    case "venue":
+      return "Base facility rental";
+    case "overtime":
+      return "Overtime";
+    case "facility":
+      return "Additional facility charges";
+    case "equipment":
+      return "Equipment charges";
+    case "service":
+      return "Additional service charges";
+    default:
+      return "Additional charges";
+  }
+};
+
+const feeGroups = (lines: EventBookingFeeLine[]) => {
+  const order = ["venue", "overtime", "facility", "equipment", "service", "additional"];
+  const totals = new Map<string, number>();
+  lines.forEach((line) => {
+    const type = order.includes(line.line_type) ? line.line_type : "additional";
+    totals.set(type, (totals.get(type) ?? 0) + Number(line.line_amount));
+  });
+  return order
+    .filter((type) => totals.has(type))
+    .map((type) => ({
+      category: feeCategory(type),
+      amount: (totals.get(type) ?? 0).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    }));
+};
+
+const isFcuGym = (name?: string | null) => {
+  const normalized = (name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+  return normalized === "fcu gym" || normalized === "gym";
+};
 import {
   EVENT_APPROVAL_PIPELINE,
   getApprovalStageLabel,
@@ -68,6 +119,104 @@ const EventBookingView = ({
 
   const [remarks, setRemarks] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [attachmentError, setAttachmentError] = useState("");
+  const [slipError, setSlipError] = useState("");
+  const [needsSignature, setNeedsSignature] = useState(false);
+  const [requesterSignatureUrl, setRequesterSignatureUrl] = useState("");
+  const letter = booking.attachments?.[0] ?? null;
+
+  useEffect(() => {
+    if (!canApprove) return;
+    void SignatureService.show()
+      .then((response) => setNeedsSignature(!response.data.data.has_signature))
+      .catch(() => setNeedsSignature(false));
+  }, [canApprove]);
+
+  useEffect(() => {
+    if (!booking.has_requester_signature) return;
+    let url = "";
+    void EventBookingService.requesterSignature(booking.event_booking_id)
+      .then((response) => {
+        url = URL.createObjectURL(response.data);
+        setRequesterSignatureUrl(url);
+      })
+      .catch(() => setRequesterSignatureUrl(""));
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [booking.event_booking_id, booking.has_requester_signature]);
+
+  const openLetter = async (mode: "preview" | "download" | "print") => {
+    if (!letter) return;
+    setAttachmentError("");
+
+    try {
+      const response =
+        mode === "download"
+          ? await EventBookingService.downloadAttachment(
+              booking.event_booking_id,
+              letter.attachment_id,
+            )
+          : await EventBookingService.previewAttachment(
+              booking.event_booking_id,
+              letter.attachment_id,
+            );
+      const blob = new Blob([response.data], {
+        type: letter.mime_type || response.data.type,
+      });
+      const url = URL.createObjectURL(blob);
+
+      if (mode === "download") {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = letter.original_filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      if (mode === "print") {
+        const popup = window.open(url);
+        popup?.addEventListener("load", () => popup.print());
+        return;
+      }
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(url);
+    } catch {
+      setAttachmentError("Unable to open the letter of request.");
+    }
+  };
+
+  const openSlip = async (mode: "preview" | "download" | "print") => {
+    setSlipError("");
+
+    try {
+      const response =
+        mode === "download"
+          ? await EventBookingService.downloadBookingSlip(booking.event_booking_id)
+          : await EventBookingService.previewBookingSlip(booking.event_booking_id);
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+
+      if (mode === "download") {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `FCU-Event-Booking-Slip-${booking.event_booking_id}.pdf`;
+        link.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      const popup = window.open(url);
+      if (mode === "print") {
+        popup?.addEventListener("load", () => popup.print());
+      }
+    } catch {
+      setSlipError("Unable to open the booking slip.");
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-5">
@@ -115,31 +264,86 @@ const EventBookingView = ({
         <div className="flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
           <section className={sectionClass}>
             <h3 className={sectionTitleClass}>
+              <FiFile className="text-[#0095D9]" size={20} />
+              Event Booking Slip
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Printable record of this booking and its approval history.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void openSlip("preview")}
+                className="rounded-xl bg-[#00679E] px-3 py-2 text-sm font-semibold text-white"
+              >
+                Preview slip
+              </button>
+              <button
+                type="button"
+                onClick={() => void openSlip("download")}
+                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+              >
+                <FiDownload size={14} /> Download PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => void openSlip("print")}
+                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+              >
+                <FiPrinter size={14} /> Print slip
+              </button>
+            </div>
+            {slipError ? (
+              <p className="mt-2 text-sm text-red-600">{slipError}</p>
+            ) : null}
+          </section>
+
+          <section className={sectionClass}>
+            <h3 className={sectionTitleClass}>
               <FiCheckCircle className="text-[#0095D9]" size={20} />
               Approval Progress
             </h3>
 
             <ol className="grid grid-cols-1 gap-2 sm:grid-cols-4">
               {EVENT_APPROVAL_PIPELINE.map((stage, index) => {
-                const decided = approvals.find(
-                  (row) => row.approval_stage === stage,
-                );
+                const decided = stageDecision(approvals, stage);
                 const isCurrent =
                   booking.status === "pending" &&
                   booking.approval_stage === stage;
+                const rejected =
+                  decided?.action === "rejected" ||
+                  (booking.status === "rejected" &&
+                    booking.approval_stage === stage);
+                const approved =
+                  booking.status === "approved" &&
+                  currentIndex >= 0 &&
+                  index <= currentIndex;
                 const completed =
-                  decided?.action === "approved" ||
-                  (booking.status === "approved" && index <= currentIndex);
+                  !rejected &&
+                  (decided?.action === "approved" ||
+                    approved ||
+                    (booking.status === "pending" &&
+                      currentIndex >= 0 &&
+                      index < currentIndex));
+                const state = rejected
+                  ? "rejected"
+                  : approved && index === currentIndex
+                    ? "approved"
+                    : completed
+                      ? "completed"
+                      : isCurrent
+                        ? "current"
+                        : "pending";
 
                 return (
                   <li
                     key={stage}
                     className={`rounded-xl border px-3 py-2 text-xs ${
-                      decided?.action === "rejected"
+                      state === "rejected"
                         ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
-                        : completed
+                        : state === "completed" || state === "approved"
                           ? "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300"
-                          : isCurrent
+                          : state === "current"
                             ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
                             : "border-gray-200 text-gray-500 dark:border-gray-700"
                     }`}
@@ -148,6 +352,7 @@ const EventBookingView = ({
                     <p className="mt-1 leading-snug">
                       {getApprovalStageLabel(stage).replace("Pending ", "")}
                     </p>
+                    <p className="mt-1 capitalize">{state}</p>
                   </li>
                 );
               })}
@@ -253,6 +458,164 @@ const EventBookingView = ({
             </div>
           </section>
 
+          {isFcuGym(booking.venue?.venue) && (
+            <section className={sectionClass}>
+              <h3 className={sectionTitleClass}>
+                <FiCheckCircle className="text-[#0095D9]" size={20} />
+                FCU Gym policy
+              </h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <p className={labelClass}>Responsibility acknowledgment</p>
+                  <p className={valueClass}>
+                    {booking.gym_responsibilities_acknowledged
+                      ? "Acknowledged"
+                      : "Not acknowledged"}
+                  </p>
+                  {booking.gym_responsibility_statement && (
+                    <p className={`${labelClass} mt-1`}>
+                      {booking.gym_responsibility_statement}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className={labelClass}>Reservation length</p>
+                  <p className={valueClass}>
+                    {booking.reservation_span === "whole_semester"
+                      ? "Whole semester"
+                      : booking.reservation_span === "whole_summer"
+                        ? "Whole summer"
+                        : "Not recorded as a whole-semester or whole-summer reservation"}
+                  </p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className={labelClass}>University-wide activity</p>
+                  <p className={valueClass}>
+                    {booking.university_wide_activity
+                      ? `Designated by ${
+                          booking.university_wide_designator?.full_name ||
+                          [
+                            booking.university_wide_designator?.first_name,
+                            booking.university_wide_designator?.last_name,
+                          ]
+                            .filter(Boolean)
+                            .join(" ") ||
+                          "Authorized person not recorded"
+                        }${
+                          booking.university_wide_designated_at
+                            ? ` on ${booking.university_wide_designated_at}`
+                            : ""
+                        }`
+                      : "Not designated"}
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section className={sectionClass}>
+            <h3 className={sectionTitleClass}>
+              <FiFile className="text-[#0095D9]" size={20} />
+              Fee breakdown
+            </h3>
+            {!booking.fee_snapshot && (
+              <p className={valueClass}>No fee breakdown is recorded on this booking.</p>
+            )}
+            {booking.fee_snapshot && !booking.fee_snapshot.total_amount && (
+              <p className={valueClass}>
+                {booking.fee_snapshot.calculation_note ??
+                  "No applicable venue rate was configured when this booking was submitted."}
+              </p>
+            )}
+            {booking.fee_snapshot?.lines && booking.fee_snapshot.lines.length > 0 && (
+              <div className="space-y-2">
+                {feeGroups(booking.fee_snapshot.lines).map((group) => (
+                  <p key={group.category} className="flex justify-between gap-3 text-sm font-medium text-gray-800 dark:text-gray-100">
+                    <span>{group.category}</span>
+                    <span>{group.amount}</span>
+                  </p>
+                ))}
+                {booking.fee_snapshot.lines.map((line, index) => (
+                  <div key={`${line.label}-${index}`} className="flex justify-between gap-3 text-sm">
+                    <span className={labelClass}>
+                      {feeCategory(line.line_type)} · {line.label}
+                      {line.schedule_date ? ` · ${line.schedule_date}` : ""}
+                      {` · ${line.quantity} ${line.unit} at ${line.unit_amount}`}
+                    </span>
+                    <span className={valueClass}>{line.line_amount}</span>
+                  </div>
+                ))}
+                <p className="font-semibold text-gray-900 dark:text-white">
+                  Grand total {booking.fee_snapshot.total_amount ?? "Not recorded"}
+                </p>
+                {booking.fee_snapshot.calculation_confirmed_at && (
+                  <p className={labelClass}>Calculation confirmed by Admin Approvals.</p>
+                )}
+                {booking.fee_snapshot.calculation_note && (
+                  <p className={labelClass}>{booking.fee_snapshot.calculation_note}</p>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className={sectionClass}>
+            <h3 className={sectionTitleClass}>
+              <FiFile className="text-[#0095D9]" size={20} />
+              Letter of Request
+            </h3>
+            {letter ? (
+              <div className="space-y-3">
+                <p className={valueClass}>{letter.original_filename}</p>
+                <p className={labelClass}>
+                  {(letter.file_size / 1024).toFixed(1)} KB
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void openLetter("preview")}
+                    className="rounded-xl bg-[#00679E] px-3 py-2 text-sm font-semibold text-white"
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void openLetter("download")}
+                    className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                  >
+                    <FiDownload size={14} /> Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void openLetter("print")}
+                    className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                  >
+                    <FiPrinter size={14} /> Print
+                  </button>
+                </div>
+                {previewUrl ? (
+                  letter.mime_type.startsWith("image/") ? (
+                    <img
+                      src={previewUrl}
+                      alt="Letter of request"
+                      className="max-h-80 rounded-lg border border-gray-200"
+                    />
+                  ) : (
+                    <iframe
+                      title="Letter of request"
+                      src={previewUrl}
+                      className="h-80 w-full rounded-lg border border-gray-200"
+                    />
+                  )
+                ) : null}
+                {attachmentError ? (
+                  <p className="text-sm text-red-600">{attachmentError}</p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No letter was attached.</p>
+            )}
+          </section>
+
           <section className={sectionClass}>
             <h3 className={sectionTitleClass}>
               <FiUsers className="text-[#0095D9]" size={20} />
@@ -308,6 +671,19 @@ const EventBookingView = ({
               <div>
                 <p className={labelClass}>Requested By</p>
                 <p className={valueClass}>{booking.requested_by}</p>
+                {requesterSignatureUrl ? (
+                  <img
+                    src={requesterSignatureUrl}
+                    alt="Requester e-signature"
+                    className="mt-2 h-12"
+                  />
+                ) : (
+                  <p className={`${labelClass} mt-1`}>
+                    {booking.has_requester_signature
+                      ? "Requester e-signature is on the booking slip."
+                      : "No requester e-signature was recorded."}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -374,7 +750,7 @@ const EventBookingView = ({
                     className="rounded-xl border border-gray-100 p-3 text-sm dark:border-gray-800"
                   >
                     <p className="font-semibold capitalize text-gray-800 dark:text-gray-200">
-                      {row.action} · {getApprovalStageLabel(row.approval_stage)}
+                      {row.action} · {decisionLabel(row)}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
                       {row.approver
@@ -410,6 +786,15 @@ const EventBookingView = ({
         <div className="space-y-3 border-t border-gray-200 bg-white px-5 py-4 dark:border-gray-700 dark:bg-gray-900 sm:px-6">
           {canApprove && (
             <div className="space-y-2">
+              {needsSignature && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  Save your e-signature in{" "}
+                  <Link to="/profile" className="font-semibold underline">
+                    My Profile
+                  </Link>{" "}
+                  before approving this booking. Rejection does not require a signature.
+                </p>
+              )}
               <label className="text-xs font-semibold text-gray-500">
                 Remarks {onReject ? "(required to reject)" : ""}
               </label>
@@ -431,7 +816,7 @@ const EventBookingView = ({
                 </button>
                 <button
                   type="button"
-                  disabled={isActing}
+                  disabled={isActing || needsSignature}
                   onClick={() => onApprove?.(remarks.trim())}
                   className="rounded-xl bg-[#00679E] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
                 >
@@ -480,5 +865,52 @@ const EventBookingView = ({
     </div>
   );
 };
+
+function stageDecision(
+  approvals: EventBookingColumns["approvals"],
+  stage: string,
+) {
+  const rows = (approvals ?? []).filter((row) => row.approval_stage === stage);
+
+  if (stage !== "event_approval") {
+    return rows[0];
+  }
+
+  const legacy = rows.find((row) => !row.decision_slot);
+  if (legacy) {
+    return legacy;
+  }
+
+  const businessManager = rows.find(
+    (row) => row.decision_slot === "business_manager",
+  );
+  const vpFinance = rows.find((row) => row.decision_slot === "vp_finance");
+
+  if (businessManager?.action === "rejected") {
+    return businessManager;
+  }
+  if (vpFinance?.action === "rejected") {
+    return vpFinance;
+  }
+  if (
+    businessManager?.action === "approved" &&
+    vpFinance?.action === "approved"
+  ) {
+    return vpFinance;
+  }
+
+  return undefined;
+}
+
+function decisionLabel(row: NonNullable<EventBookingColumns["approvals"]>[number]) {
+  if (row.decision_slot === "business_manager") {
+    return "Business Manager";
+  }
+  if (row.decision_slot === "vp_finance") {
+    return "VP-Finance";
+  }
+
+  return getApprovalStageLabel(row.approval_stage);
+}
 
 export default EventBookingView;

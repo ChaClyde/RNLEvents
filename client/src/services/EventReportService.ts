@@ -13,6 +13,7 @@ export interface EventReportFilters {
   per_page?: number;
   sort?: string;
   direction?: "asc" | "desc";
+  report?: "daily" | "weekly" | "monthly" | "";
 }
 
 export interface EventReportCard {
@@ -58,6 +59,7 @@ export interface EventReportSummary {
 export interface EventReportVenues {
   most_frequent: { label: string; value: number }[];
   least_utilized: { label: string; value: number }[];
+  ranked?: { label: string; value: number }[];
   frequency: DashboardChart;
   distribution: DashboardChart;
 }

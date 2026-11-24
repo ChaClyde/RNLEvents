@@ -30,6 +30,18 @@ export interface VenueResource {
   updated_at?: string;
 }
 
+export interface VenueMaintenanceRecord {
+  maintenance_id: number;
+  venue_id: number;
+  reason: string;
+  notes: string | null;
+  date_start: string;
+  date_end: string;
+  status: "scheduled" | "completed" | "cancelled";
+  phase?: string;
+  range_label?: string;
+}
+
 export type VenueResourceInput = Omit<
   VenueResource,
   "resource_id" | "venue_id" | "created_at" | "updated_at"
@@ -71,6 +83,8 @@ export interface VenueColumns {
 
   // Venue Resources
   resources?: VenueResource[];
+
+  maintenance?: VenueMaintenanceRecord[];
 
   created_at: string;
   updated_at: string;

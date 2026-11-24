@@ -9,7 +9,6 @@ import type {
   DriverColumns,
   DriverFieldErrors,
 } from "../../../interfaces/DriverColumns";
-import type { VehicleColumns } from "../../../interfaces/VehicleColumns";
 import { parseApiErrors } from "../../../interfaces/ApiErrorHelpers";
 import {
   buildDriverPayload,
@@ -22,7 +21,6 @@ import DriverFormFields, { DriverFormError } from "./DriverFormFields";
 
 interface EditDriverFormModalProps {
   driver: DriverColumns | null;
-  vehicles: VehicleColumns[];
   onDriverUpdated: (message: string) => void;
   refreshKey: () => void;
   isOpen: boolean;
@@ -31,7 +29,6 @@ interface EditDriverFormModalProps {
 
 const EditDriverFormModal: FC<EditDriverFormModalProps> = ({
   driver,
-  vehicles,
   onDriverUpdated,
   refreshKey,
   isOpen,
@@ -45,11 +42,11 @@ const EditDriverFormModal: FC<EditDriverFormModalProps> = ({
   // Load the selected driver into the form each time the modal opens
   useEffect(() => {
     if (isOpen && driver) {
-      setForm(driverToForm(driver, vehicles));
+      setForm(driverToForm(driver));
       setErrors({});
       setServerError("");
     }
-  }, [isOpen, driver, vehicles]);
+  }, [isOpen, driver]);
 
   const handleChange = <K extends keyof DriverFormValues>(
     field: K,
@@ -131,7 +128,6 @@ const EditDriverFormModal: FC<EditDriverFormModalProps> = ({
         <DriverFormFields
           values={form}
           errors={errors}
-          vehicles={vehicles}
           onChange={handleChange}
         />
 

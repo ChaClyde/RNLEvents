@@ -1,5 +1,3 @@
-import type { VehicleColumns } from "./VehicleColumns";
-
 // ============================================================
 // STATUS
 // ============================================================
@@ -21,12 +19,6 @@ export const DRIVER_STATUSES: DriverStatus[] = [
 // DRIVER
 // ============================================================
 
-// The list and single endpoints return only these vehicle columns
-export type DriverDefaultVehicle = Pick<
-  VehicleColumns,
-  "vehicle_id" | "vehicle_name" | "plate_number"
->;
-
 export interface DriverColumns {
   driver_id: number;
 
@@ -34,16 +26,7 @@ export interface DriverColumns {
   driver_name: string;
   contact_number: string | null;
   email: string | null;
-
-  // License
-  license_number: string | null;
-  license_expiry: string | null; // YYYY-MM-DD
-  is_license_expired: boolean;
-
-  // Assignment
-  is_reliever: boolean;
-  default_vehicle_id: number | null;
-  default_vehicle?: DriverDefaultVehicle | null;
+  license_expiry: string | null;
 
   // Availability
   driver_status: DriverStatus;
@@ -64,12 +47,7 @@ export interface DriverFormData {
   driver_name: string;
   contact_number?: string | null;
   email?: string | null;
-
-  license_number?: string | null;
   license_expiry?: string | null;
-
-  is_reliever?: boolean;
-  default_vehicle_id?: number | null;
 
   driver_status?: DriverStatus;
   status_remarks?: string | null;
@@ -112,10 +90,7 @@ export interface DriverFieldErrors {
   driver_name?: string[];
   contact_number?: string[];
   email?: string[];
-  license_number?: string[];
   license_expiry?: string[];
-  is_reliever?: string[];
-  default_vehicle_id?: string[];
   driver_status?: string[];
   status_remarks?: string[];
   status_start_date?: string[];

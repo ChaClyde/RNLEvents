@@ -1,8 +1,11 @@
 import AxiosInstance from "./AxiosInstance";
 
+import type { AxiosProgressEvent } from "axios";
 import type {
   AvailabilityCheckResponse,
+  EventBookingAttachment,
   EventBookingFilters,
+  EventBookingFeeSnapshot,
   EventBookingFormData,
   EventBookingListResponse,
   EventBookingMessageResponse,
@@ -28,10 +31,24 @@ const EventBookingService = {
   },
 
   // Dry run: conflicts + suggestions, saves nothing
+  previewFee: async (
+    data: EventBookingScheduleInput & {
+      venue_id: number;
+      resources?: Array<{ resource_id?: number | null; quantity?: number }>;
+    },
+  ) => {
+    return await AxiosInstance.post<{ data: EventBookingFeeSnapshot }>(
+      "/event-bookings/previewFee",
+      data,
+    );
+  },
+
   checkAvailability: async (
     data: EventBookingScheduleInput & {
       venue_id: number;
       exclude_event_booking_id?: number;
+      university_wide_activity?: boolean;
+      reservation_span?: "standard" | "whole_semester" | "whole_summer";
     },
   ) => {
     return await AxiosInstance.post<AvailabilityCheckResponse>(
@@ -95,6 +112,113 @@ const EventBookingService = {
   forceDeleteEventBooking: async (event_booking_id: string | number) => {
     return await AxiosInstance.delete<EventBookingMessageResponse>(
       `/event-bookings/forceDeleteEventBooking/${event_booking_id}`,
+    );
+  },
+
+  uploadAttachment: async (
+    event_booking_id: string | number,
+    file: File,
+    onProgress?: (percent: number) => void,
+  ) => {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("attachment_type", "letter_of_request");
+
+    return await AxiosInstance.post<{
+      message: string;
+      data: EventBookingAttachment;
+    }>(`/event-bookings/${event_booking_id}/attachments`, body, {
+      onUploadProgress: (event: AxiosProgressEvent) => {
+        if (!onProgress || !event.total) return;
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      },
+    });
+  },
+
+  deleteAttachment: async (
+    event_booking_id: string | number,
+    attachment_id: string | number,
+  ) => {
+    return await AxiosInstance.delete<EventBookingMessageResponse>(
+      `/event-bookings/${event_booking_id}/attachments/${attachment_id}`,
+    );
+  },
+
+  previewAttachment: async (
+    event_booking_id: string | number,
+    attachment_id: string | number,
+  ) => {
+    return await AxiosInstance.get<Blob>(
+      `/event-bookings/${event_booking_id}/attachments/${attachment_id}/preview`,
+      { responseType: "blob" },
+    );
+  },
+
+  downloadAttachment: async (
+    event_booking_id: string | number,
+    attachment_id: string | number,
+  ) => {
+    return await AxiosInstance.get<Blob>(
+      `/event-bookings/${event_booking_id}/attachments/${attachment_id}/download`,
+      { responseType: "blob" },
+    );
+  },
+
+  facilityRates: async () => {
+    return await AxiosInstance.get<{
+      data: {
+        title: string;
+        effective: string;
+        evening_note: string;
+        items: Array<{
+          name: string;
+          rate: string;
+          unit: string;
+          details: string | null;
+          note: string | null;
+        }>;
+        prepared_by: string;
+        endorsed_by: string;
+        approved_by: string;
+      };
+    }>("/event-bookings/facility-rates");
+  },
+
+  updateFeeCalculation: async (
+    event_booking_id: string | number,
+    payload: {
+      confirm: boolean;
+      lines: Array<{
+        event_booking_fee_line_id: number;
+        quantity: number;
+        unit_amount: number;
+      }>;
+    },
+  ) => {
+    return await AxiosInstance.put<EventBookingResponse>(
+      `/event-bookings/${event_booking_id}/fee-calculation`,
+      payload,
+    );
+  },
+
+  requesterSignature: async (event_booking_id: string | number) => {
+    return await AxiosInstance.get<Blob>(
+      `/event-bookings/${event_booking_id}/requester-signature`,
+      { responseType: "blob" },
+    );
+  },
+
+  previewBookingSlip: async (event_booking_id: string | number) => {
+    return await AxiosInstance.get<Blob>(
+      `/event-bookings/${event_booking_id}/booking-slip/preview`,
+      { responseType: "blob" },
+    );
+  },
+
+  downloadBookingSlip: async (event_booking_id: string | number) => {
+    return await AxiosInstance.get<Blob>(
+      `/event-bookings/${event_booking_id}/booking-slip/download`,
+      { responseType: "blob" },
     );
   },
 };

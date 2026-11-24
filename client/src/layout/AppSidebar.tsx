@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { NavLink } from "react-router-dom";
 import { useSidebar } from "../contexts/SidebarContext";
 import { useAuth } from "../contexts/AuthContext";
 import { getVisibleSidebarItems } from "../permissions";
@@ -25,8 +25,9 @@ import {
   FiMessageSquare,
   FiBell,
   FiSettings,
-  FiLogOut,
 } from "react-icons/fi";
+import { eventApprovalService } from "../services/EventApprovalService";
+import VehicleBookingService from "../services/VehicleBookingService";
 
 /*
 |--------------------------------------------------------------------------
@@ -39,33 +40,47 @@ import {
 | primary        #1D4ED8  Active text and indicator bar
 | primary-soft   #EAF0FD  Hover and active background
 | accent         #F5B800  Pending badge (navy text on top)
-| danger         #B91C1C  Logout hover
 */
 
+// The sidebar clips overflow, so the tooltip is `fixed` and positioned from
+// the hovered item. That way it is never cut off at the sidebar's edge.
 const Tooltip = ({
   label,
   children,
 }: {
   label: string;
   children: React.ReactNode;
-}) => (
-  <div className="relative group/tip w-full">
-    {children}
+}) => {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const show = (e: React.SyntheticEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPos({ top: rect.top + rect.height / 2, left: rect.right + 12 });
+  };
+
+  return (
     <div
-      className="
-        pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
-        whitespace-nowrap rounded-lg bg-ink text-white
-        px-3 py-2 text-xs font-medium shadow-md
-        opacity-0 translate-x-1.5
-        group-hover/tip:opacity-100 group-hover/tip:translate-x-0
-        transition-all duration-150
-      "
+      className="w-full"
+      onMouseEnter={show}
+      onMouseLeave={() => setPos(null)}
+      onFocus={show}
+      onBlur={() => setPos(null)}
     >
-      {label}
-      <div className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-ink" />
+      {children}
+
+      {pos && (
+        <div
+          role="tooltip"
+          style={{ top: pos.top, left: pos.left }}
+          className="pointer-events-none fixed z-[60] -translate-y-1/2 whitespace-nowrap rounded-lg bg-ink px-3 py-2 text-xs font-medium text-white shadow-md"
+        >
+          {label}
+          <div className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-ink" />
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 const navIcons: Record<string, React.ReactNode> = {
   dashboard: <FiHome />,
@@ -80,7 +95,7 @@ const navIcons: Record<string, React.ReactNode> = {
   vehicle_management: <FiTruck />,
   vehicles: <FiList />,
   drivers: <FiUser />,
-  "vehicle-list": <FiClipboard />,
+  trips: <FiClipboard />,
   booking_management: <FiBookOpen />,
   "event-bookings": <FiList />,
   "vehicle-bookings": <FiList />,
@@ -98,33 +113,45 @@ const navIcons: Record<string, React.ReactNode> = {
 
 const AppSidebar = () => {
   const { isOpen, toggleSidebar } = useSidebar();
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
   const toggleMenu = (menu: string) =>
     setOpenMenus((prev) => ({ ...prev, [menu]: !prev[menu] }));
 
-  const handleLogout = () => {
-    void logout().then(() => navigate("/login"));
-  };
+  // Number of event requests waiting on the logged-in approver
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
-  const pendingApprovals = 0;
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    Promise.allSettled([
+      eventApprovalService.awaitingMyApproval(),
+      VehicleBookingService.awaitingMyApproval(),
+    ]).then(([events, vehicles]) => {
+      if (cancelled) return;
+      const eventCount = events.status === "fulfilled" ? events.value.length : 0;
+      const vehicleCount = vehicles.status === "fulfilled" ? vehicles.value.length : 0;
+      setPendingApprovals(eventCount + vehicleCount);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const sidebarItems = useMemo(
     () => getVisibleSidebarItems(user, pendingApprovals),
-    [user],
+    [user, pendingApprovals],
   );
 
   // Muted text on white; soft blue pill on hover; active item gets the same
   // pill in royal blue text plus a blue indicator bar on the left edge
-  const inactiveLink = "text-muted hover:bg-primary-soft hover:text-primary";
-  const activeLink =
-    "bg-primary-soft text-primary font-semibold shadow-[inset_3px_0_0_var(--color-primary)]";
-  const activeChild =
-    "bg-primary-soft text-primary font-semibold shadow-[inset_3px_0_0_var(--color-primary)]";
-  const logoutLink = "text-muted hover:bg-danger-soft hover:text-danger";
+  const inactiveLink = "text-[#6B7790] hover:bg-[#E3EBFF] hover:text-[#002583]";
+  const activeLink = "bg-[#002583] text-white font-semibold shadow-md";
+  const activeChild = "bg-[#002583] text-white font-semibold shadow-md";
 
   return (
     <>
@@ -135,21 +162,19 @@ const AppSidebar = () => {
         />
       )}
 
+      {/* Expanded: w-64. Collapsed: icon rail (w-17) on sm+, hidden on phones */}
       <aside
         id="top-bar-sidebar"
         className={`
-          fixed top-0 left-0 z-40 h-screen
-          bg-surface
-          border-r border-line
+          fixed top-16 bottom-3 left-0 z-40 rounded-br-3xl shadow-sm
+          bg-white
+          border-r border-[#E5E8EF]
           flex flex-col
           transition-[width] duration-300 ease-in-out overflow-hidden
           ${isOpen ? "w-64" : "w-0 sm:w-17"}
         `}
         aria-label="Sidebar"
       >
-        {/* Spacer below fixed header */}
-        <div className="h-18 shrink-0 border-b border-line" />
-
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2 space-y-0.5">
           {sidebarItems.map((item) => (
             <div key={item.id}>
@@ -175,6 +200,7 @@ const AppSidebar = () => {
                     <NavLink
                       to={item.path!}
                       end={item.path === "/"}
+                      aria-label={item.text}
                       className={({ isActive }) => `
                         flex items-center justify-center w-full py-2.5 rounded-lg text-base
                         transition-colors duration-150
@@ -246,6 +272,8 @@ const AppSidebar = () => {
                     </div>
                   </>
                 ) : (
+                  /* Collapsed: the group icon, then each child icon as its own
+                     clickable link */
                   <div className="space-y-0.5">
                     <Tooltip label={item.text}>
                       <div className="relative flex w-full items-center justify-center py-2 rounded-lg text-base text-muted/60 cursor-default select-none">
@@ -262,6 +290,7 @@ const AppSidebar = () => {
                         <NavLink
                           to={child.path}
                           end
+                          aria-label={child.text}
                           className={({ isActive }) => `
                             flex items-center justify-center w-full py-2.5 rounded-lg text-base
                             transition-colors duration-150
@@ -277,63 +306,6 @@ const AppSidebar = () => {
             </div>
           ))}
         </nav>
-
-        {/* Account: My Profile + Logout */}
-        <div className="shrink-0 space-y-0.5 border-t border-line px-2 py-2">
-          {isOpen ? (
-            <>
-              <NavLink
-                to="/profile"
-                className={({ isActive }) => `
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  transition-colors duration-150
-                  ${isActive ? activeLink : inactiveLink}
-                `}
-              >
-                <span className="text-base shrink-0">
-                  <FiUser />
-                </span>
-                <span className="whitespace-nowrap">My Profile</span>
-              </NavLink>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 ${logoutLink}`}
-              >
-                <span className="text-base shrink-0">
-                  <FiLogOut />
-                </span>
-                <span className="whitespace-nowrap">Logout</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <Tooltip label="My Profile">
-                <NavLink
-                  to="/profile"
-                  className={({ isActive }) => `
-                    flex items-center justify-center w-full py-2.5 rounded-lg text-base
-                    transition-colors duration-150
-                    ${isActive ? activeLink : inactiveLink}
-                  `}
-                >
-                  <FiUser />
-                </NavLink>
-              </Tooltip>
-
-              <Tooltip label="Logout">
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className={`flex w-full items-center justify-center py-2.5 rounded-lg text-base transition-colors duration-150 ${logoutLink}`}
-                >
-                  <FiLogOut />
-                </button>
-              </Tooltip>
-            </>
-          )}
-        </div>
 
         {/* Footer */}
         <div className="border-t border-line shrink-0 p-3">

@@ -15,6 +15,7 @@ export interface VehicleReportFilters {
   per_page?: number;
   sort?: string;
   direction?: "asc" | "desc";
+  report?: "daily" | "weekly" | "monthly" | "driver" | "usage" | "";
 }
 
 export interface VehicleReportCard {

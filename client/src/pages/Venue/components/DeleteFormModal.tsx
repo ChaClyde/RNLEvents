@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FiAlertTriangle,
   FiX,
@@ -28,6 +28,61 @@ const DeleteVenueFormModal = ({
   onNotify,
 }: DeleteVenueFormModalProps) => {
   const [loading, setLoading] = useState(false);
+  const [rateSummary, setRateSummary] = useState<{
+    basis: string;
+    base: string;
+    overtime: string;
+    policy: string;
+    resources: { name: string; rate: string }[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !venue) {
+      setRateSummary(null);
+      return;
+    }
+
+    VenueService.loadRates(venue.venue_id)
+      .then((response) => {
+        const rates = (response.data.data ?? []) as Array<{
+          pricing_basis: "hourly" | "daily";
+          hourly_rate: string | null;
+          daily_rate: string | null;
+          overtime_rate: string | null;
+          overtime_policy: string | null;
+          effective_from: string;
+          effective_to: string | null;
+          is_active: boolean;
+          charges?: Array<{ charge_name: string; amount: string; unit: string }>;
+        }>;
+        const today = new Date().toISOString().slice(0, 10);
+        const active = rates
+          .filter((rate) => rate.is_active && rate.effective_from <= today && (!rate.effective_to || rate.effective_to >= today))
+          .sort((left, right) => right.effective_from.localeCompare(left.effective_from))[0];
+
+        if (!active) {
+          setRateSummary(null);
+          return;
+        }
+
+        setRateSummary({
+          basis: active.pricing_basis === "hourly" ? "Hourly rental" : "Daily rental",
+          base: active.pricing_basis === "hourly"
+            ? (active.hourly_rate ?? "0.00")
+            : (active.daily_rate ?? "0.00"),
+          overtime: active.overtime_rate ?? "0.00",
+          policy: active.overtime_policy
+            || "Monday to Friday, 8:00 AM to 5:00 PM is regular time. Saturday, Sunday, time before 8:00 AM, and time from 5:00 PM onward are overtime.",
+          resources: (active.charges ?? [])
+            .filter((charge) => charge.unit === "per_overtime_hour")
+            .map((charge) => ({
+              name: charge.charge_name,
+              rate: String(charge.amount ?? "0.00"),
+            })),
+        });
+      })
+      .catch(() => setRateSummary(null));
+  }, [isOpen, venue]);
 
   const handleDelete = async () => {
     if (!venue || loading) return;
@@ -57,7 +112,7 @@ const DeleteVenueFormModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-5">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">
             Delete Venue
@@ -139,6 +194,42 @@ const DeleteVenueFormModal = ({
                     <FiMail className="shrink-0 text-[#0095D9]" />
                     {venue.pic_email}
                   </p>
+                )}
+              </div>
+
+              <div className="space-y-1 border-t border-gray-100 pt-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300">
+                <p className="font-semibold text-gray-800 dark:text-gray-100">Overtime rates</p>
+                <p>Regular time: Monday–Friday, 8:00 AM – 5:00 PM</p>
+                {rateSummary ? (
+                  <>
+                    <p>{rateSummary.basis}: {rateSummary.base}</p>
+                    <p>Overtime rate per hour: {rateSummary.overtime}</p>
+                    <p>{rateSummary.policy}</p>
+                    {rateSummary.resources.length > 0 && (
+                      <ul className="list-disc pl-5">
+                        {rateSummary.resources.map((resource) => (
+                          <li key={resource.name}>
+                            {resource.name}: {resource.rate} per overtime hour
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <p>No overtime rate is saved for this venue.</p>
+                )}
+              </div>
+
+              <div className="space-y-1 border-t border-gray-100 pt-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300">
+                <p className="font-semibold text-gray-800 dark:text-gray-100">Venue resources</p>
+                {(venue.resources ?? []).length === 0 ? (
+                  <p>No resources are recorded.</p>
+                ) : (
+                  <ul className="list-disc pl-5">
+                    {venue.resources?.map((resource) => (
+                      <li key={resource.resource_id}>{resource.resource_name}</li>
+                    ))}
+                  </ul>
                 )}
               </div>
             </div>

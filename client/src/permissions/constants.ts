@@ -2,8 +2,8 @@ export const RoleSlug = {
   SUPER_ADMIN: "super-admin",
   EVENT_ADMIN: "event-admin",
   VEHICLE_ADMIN: "vehicle-admin",
-  EVENT_APPROVAL_ADMIN: "event-approval-admin",
-  VEHICLE_APPROVAL_ADMIN: "vehicle-approval-admin",
+  ADMIN_APPROVALS: "admin-approvals",
+  OIC_BUDGET: "oic-budget",
   DEAN_OFFICE_HEAD: "dean-office-head",
   FACULTY_STAFF: "faculty-staff",
   STUDENT_REPUBLIC: "student-republic",
@@ -26,6 +26,7 @@ export const ApprovalStage = {
   EVENT_ADMIN: "event_admin",
   VEHICLE_APPROVAL: "vehicle_approval",
   VEHICLE_ADMIN: "vehicle_admin",
+  OIC_BUDGET: "oic_budget",
   SUPER_ADMIN: "super_admin",
 } as const;
 
@@ -57,6 +58,11 @@ export const Permission = {
   VENUES_EDIT: "venues.edit",
   VENUES_DELETE: "venues.delete",
 
+  VENUE_RATES_VIEW: "venue_rates.view",
+  VENUE_RATES_CREATE: "venue_rates.create",
+  VENUE_RATES_EDIT: "venue_rates.edit",
+  VENUE_RATES_DELETE: "venue_rates.delete",
+
   EVENTS_VIEW: "events.view",
   EVENTS_CREATE: "events.create",
   EVENTS_EDIT: "events.edit",
@@ -76,6 +82,8 @@ export const Permission = {
   EVENT_BOOKINGS_CREATE: "event_bookings.create",
   EVENT_BOOKINGS_EDIT: "event_bookings.edit",
   EVENT_BOOKINGS_DELETE: "event_bookings.delete",
+  EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE:
+    "event_bookings.designate_university_wide",
 
   VEHICLE_BOOKINGS_VIEW: "vehicle_bookings.view",
   VEHICLE_BOOKINGS_CREATE: "vehicle_bookings.create",

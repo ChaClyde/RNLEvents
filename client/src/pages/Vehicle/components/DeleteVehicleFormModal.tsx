@@ -31,13 +31,20 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
   const [loadingDestroy, setLoadingDestroy] = useState(false);
   const [serverError, setServerError] = useState("");
 
+  // Start clean every time the modal opens or a different vehicle is shown
   useEffect(() => {
     if (isOpen) setServerError("");
-  }, [isOpen]);
+  }, [isOpen, vehicle?.vehicle_id]);
+
+  // Don't let the modal close (backdrop, X, Cancel) while the delete is running
+  const handleClose = () => {
+    if (loadingDestroy) return;
+    onClose();
+  };
 
   const handleDestroyVehicle = async (e: FormEvent) => {
     e.preventDefault();
-    if (!vehicle) return;
+    if (!vehicle || loadingDestroy) return;
 
     try {
       setLoadingDestroy(true);
@@ -45,8 +52,9 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
 
       const res = await VehicleService.destroyVehicle(vehicle.vehicle_id);
 
-      if (res.status === 200) {
-        onDeleteVehicle(res.data.message);
+      // Any 2xx counts as success (not only 200)
+      if (res.status >= 200 && res.status < 300) {
+        onDeleteVehicle(res.data?.message ?? "Vehicle moved to Trash Bin.");
         refreshKey();
         onClose();
       }
@@ -62,7 +70,7 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
   if (!isOpen || !vehicle) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} showCloseButton>
+    <Modal isOpen={isOpen} onClose={handleClose} showCloseButton>
       <form onSubmit={handleDestroyVehicle} className="space-y-6">
         {/* Header */}
         <div className="relative overflow-hidden rounded-3xl border border-red-200 bg-red-50 p-6">
@@ -169,7 +177,9 @@ const DeleteVehicleFormModal: FC<DeleteVehicleFormModalProps> = ({
 
         {/* Actions */}
         <div className="flex justify-end gap-3 border-t border-gray-100 pt-4">
-          {!loadingDestroy && <CloseButton label="Cancel" onClose={onClose} />}
+          {!loadingDestroy && (
+            <CloseButton label="Cancel" onClose={handleClose} />
+          )}
 
           <SubmitButton
             label="Delete Vehicle"

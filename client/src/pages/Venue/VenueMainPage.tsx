@@ -18,6 +18,7 @@ import AddVenueFormModal from "./components/AddVenueFormModal";
 import DeleteVenueFormModal from "./components/DeleteFormModal";
 import EditVenueFormModal from "./components/EditFormModal";
 import VenueResourcesModal from "./components/VenueResourcesModal";
+import OvertimeRatesPanel from "./components/OvertimeRatesPanel";
 
 const VenueMainPage = () => {
   const [venues, setVenues] = useState<VenueColumns[]>([]);
@@ -30,6 +31,7 @@ const VenueMainPage = () => {
   const [isResourcesOpen, setIsResourcesOpen] = useState(false);
 
   const [selectedVenue, setSelectedVenue] = useState<VenueColumns | null>(null);
+  const [tab, setTab] = useState<"venues" | "resources" | "overtime">("venues");
 
   const { message, isVisible, showToastMessage, closeToastMessage } =
     useToastMessage("", false);
@@ -124,22 +126,13 @@ const VenueMainPage = () => {
               Venue Management
             </h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Manage university venues, facilities, and resources.
+              Manage venues, resources, and overtime rates.
             </p>
           </div>
         </div>
 
         {/* Header Actions */}
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setIsResourcesOpen(true)}
-            className="flex items-center justify-center gap-2 rounded-xl border border-[#0095D9]/30 bg-white px-4 py-2.5 text-sm font-semibold text-[#00679E] transition hover:bg-[#0095D9]/10 dark:border-gray-700 dark:bg-gray-900 dark:text-sky-400 dark:hover:bg-gray-800"
-          >
-            <FiPackage size={17} />
-            Venue Resources
-          </button>
-
           <button
             type="button"
             onClick={loadVenues}
@@ -213,6 +206,29 @@ const VenueMainPage = () => {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["venues", "Venues"],
+            ["resources", "Venue Resources"],
+            ["overtime", "Overtime Rates"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+              tab === key
+                ? "bg-[#00679E] text-white"
+                : "border border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Error */}
       {error && (
         <div className="flex flex-col justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center dark:border-red-900 dark:bg-red-900/20">
@@ -235,12 +251,45 @@ const VenueMainPage = () => {
             Loading venues...
           </p>
         </div>
-      ) : (
+      ) : tab === "venues" ? (
         <VenueList
           venues={venues}
           onEdit={handleEdit}
           onDelete={handleDelete}
         />
+      ) : tab === "resources" ? (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setIsResourcesOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-[#0095D9]/30 bg-white px-4 py-2.5 text-sm font-semibold text-[#00679E] dark:bg-gray-900"
+            >
+              <FiPackage size={17} />
+              Manage resources
+            </button>
+          </div>
+          {venues.map((venue) => (
+            <div key={venue.venue_id} className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+              <p className="font-semibold text-gray-900 dark:text-white">{venue.venue}</p>
+              {(venue.resources ?? []).length === 0 ? (
+                <p className="mt-1 text-sm text-gray-500">No resources recorded.</p>
+              ) : (
+                <ul className="mt-2 list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+                  {venue.resources?.map((resource) => (
+                    <li key={resource.resource_id}>
+                      {resource.resource_name}
+                      {resource.total_quantity != null ? ` · ${resource.total_quantity}` : ""}
+                      {` · ${resource.availability_type.replaceAll("_", " ")}`}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <OvertimeRatesPanel venues={venues} onSaved={loadVenues} />
       )}
 
       {/* Add Venue */}

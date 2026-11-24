@@ -1,53 +1,38 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 
 import { useModal } from "../../hooks/useModal";
 import { useToast } from "../../contexts/ToastContext";
 import VehicleService from "../../services/VehicleService";
-import AddVehicleFormModal from "./components/AddVehicleFormModal";
-import VehicleList from "./components/VehicleList";
-import EditVehicleFormModal from "./components/EditVehicleFormModal";
-import DeleteVehicleFormModal from "./components/DeleteVehicleFormModal";
 import type { VehicleColumns } from "../../interfaces/VehicleColumns";
 import { parseVehicleError } from "../../interfaces/VehicleHelpers";
 
+import VehicleList from "./components/VehicleList";
+import AddVehicleFormModal from "./components/AddVehicleFormModal";
+import EditVehicleFormModal from "./components/EditVehicleFormModal";
+import DeleteVehicleFormModal from "./components/DeleteVehicleFormModal";
+
 const VehicleMainPage = () => {
-  const {
-    isOpen: isAddOpen,
-    openModal: openAddModal,
-    closeModal: closeAddModal,
-  } = useModal(false);
-  const {
-    isOpen: isEditOpen,
-    openModal: openEditModal,
-    closeModal: closeEditModal,
-  } = useModal(false);
-  const {
-    isOpen: isDeleteOpen,
-    openModal: openDeleteModal,
-    closeModal: closeDeleteModal,
-  } = useModal(false);
+  const add = useModal(false);
+  const edit = useModal(false);
+  const del = useModal(false);
 
   const [vehicles, setVehicles] = useState<VehicleColumns[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [selectedVehicle, setSelectedVehicle] = useState<VehicleColumns | null>(
-    null,
-  );
+  const [pageError, setPageError] = useState("");
+  const [selected, setSelected] = useState<VehicleColumns | null>(null);
 
   const { showToast } = useToast();
 
   const loadVehicles = useCallback(async () => {
     setLoading(true);
-    setLoadError("");
+    setPageError("");
 
     try {
-      const response = await VehicleService.loadVehicles();
-
-      // The API now returns { message, data } like the other modules
-      setVehicles(response.data.data);
+      const res = await VehicleService.loadVehicles();
+      setVehicles(res.data.data);
     } catch (error) {
-      setLoadError(
+      setPageError(
         parseVehicleError(error, "Failed to load vehicles.").message,
       );
     } finally {
@@ -59,47 +44,35 @@ const VehicleMainPage = () => {
     loadVehicles();
   }, [loadVehicles]);
 
-  const handleEditVehicle = (vehicle: VehicleColumns) => {
-    setSelectedVehicle(vehicle);
-    openEditModal();
-  };
-
-  const handleDeleteVehicle = (vehicle: VehicleColumns) => {
-    setSelectedVehicle(vehicle);
-    openDeleteModal();
-  };
-
   return (
     <div className="space-y-6">
       <AddVehicleFormModal
-        isOpen={isAddOpen}
-        onClose={closeAddModal}
-        onVehicleAdded={(message) => showToast(message)}
+        isOpen={add.isOpen}
+        onClose={add.closeModal}
+        onVehicleAdded={(message: string) => showToast(message)}
         refreshKey={loadVehicles}
       />
 
       <EditVehicleFormModal
-        vehicle={selectedVehicle}
-        isOpen={isEditOpen}
-        onClose={closeEditModal}
+        vehicle={selected}
+        isOpen={edit.isOpen}
+        onClose={edit.closeModal}
         onVehicleUpdated={(message) => showToast(message)}
         refreshKey={loadVehicles}
       />
 
       <DeleteVehicleFormModal
-        vehicle={selectedVehicle}
-        isOpen={isDeleteOpen}
-        onClose={closeDeleteModal}
+        vehicle={selected}
+        isOpen={del.isOpen}
+        onClose={del.closeModal}
         onDeleteVehicle={(message) => showToast(message)}
         refreshKey={loadVehicles}
       />
 
-      {loadError && (
+      {pageError && (
         <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <AlertCircle size={18} className="mt-0.5 shrink-0" />
-
-          <p className="flex-1">{loadError}</p>
-
+          <p className="flex-1">{pageError}</p>
           <button
             type="button"
             onClick={loadVehicles}
@@ -114,9 +87,15 @@ const VehicleMainPage = () => {
       <VehicleList
         vehicles={vehicles}
         loading={loading}
-        onAddVehicle={openAddModal}
-        onEditVehicle={handleEditVehicle}
-        onDeleteVehicle={handleDeleteVehicle}
+        onAddVehicle={add.openModal}
+        onEditVehicle={(vehicle) => {
+          setSelected(vehicle);
+          edit.openModal();
+        }}
+        onDeleteVehicle={(vehicle) => {
+          setSelected(vehicle);
+          del.openModal();
+        }}
         onRefresh={loadVehicles}
       />
     </div>

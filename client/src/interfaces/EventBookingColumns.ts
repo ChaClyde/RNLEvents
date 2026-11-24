@@ -90,6 +90,8 @@ export interface AvailabilityCheckResponse {
   available: boolean;
   conflicts: VenueConflict[];
   suggestions: ConflictSuggestion[];
+  schedule_restrictions?: string[];
+  gym_reservation_warning?: string | null;
 }
 
 export interface CalendarEventSummary {
@@ -186,6 +188,39 @@ export interface EventBookingResourceInput {
 // EVENT BOOKING
 // ============================================================
 
+export interface EventBookingAttachment {
+  attachment_id: number;
+  event_booking_id: number;
+  uploaded_by: number;
+  original_filename: string;
+  mime_type: string;
+  file_size: number;
+  attachment_type: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EventBookingFeeLine {
+  event_booking_fee_line_id?: number;
+  schedule_date?: string | null;
+  line_type: string;
+  label: string;
+  quantity: string;
+  unit: string;
+  unit_amount: string;
+  line_amount: string;
+}
+
+export interface EventBookingFeeSnapshot {
+  total_amount: string | null;
+  venue_amount: string | null;
+  overtime_amount: string | null;
+  additional_amount: string | null;
+  calculation_note: string | null;
+  calculation_confirmed_at?: string | null;
+  lines?: EventBookingFeeLine[];
+}
+
 export interface EventBookingColumns {
   event_booking_id: number;
 
@@ -214,6 +249,8 @@ export interface EventBookingColumns {
 
   // Requested Resources
   resources?: EventBookingResource[];
+  attachments?: EventBookingAttachment[];
+  fee_snapshot?: EventBookingFeeSnapshot | null;
 
   // Requestor
   requested_by: string;
@@ -229,6 +266,9 @@ export interface EventBookingColumns {
 
   email: string;
   tel_number: string;
+  has_requester_signature?: boolean;
+  requester_signer_name?: string | null;
+  requester_signer_position?: string | null;
 
   // Approval
   status: EventBookingStatus;
@@ -238,6 +278,18 @@ export interface EventBookingColumns {
 
   // Cancellation
   cancellation_reason: string | null;
+
+  university_wide_activity?: boolean;
+  university_wide_designated_at?: string | null;
+  reservation_span?: "standard" | "whole_semester" | "whole_summer" | null;
+  gym_responsibilities_acknowledged?: boolean;
+  gym_responsibility_statement?: string | null;
+  university_wide_designator?: {
+    user_id: number;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+  } | null;
 
   // Soft Delete
   is_deleted: boolean;
@@ -265,6 +317,10 @@ export interface EventBookingFormData extends EventBookingScheduleInput {
 
   email: string;
   tel_number: string;
+
+  university_wide_activity?: boolean;
+  reservation_span?: "standard" | "whole_semester" | "whole_summer";
+  gym_responsibilities_acknowledged?: boolean;
 }
 
 // ============================================================
@@ -276,8 +332,12 @@ export interface EventBookingApprovalRecord {
   event_booking_id: number;
   approver_user_id: number;
   approval_stage: string;
+  decision_slot?: "business_manager" | "vp_finance" | null;
   action: "approved" | "rejected";
   remarks: string | null;
+  has_signature?: boolean;
+  signer_name?: string | null;
+  signer_position?: string | null;
   created_at: string;
   approver?: {
     user_id: number;

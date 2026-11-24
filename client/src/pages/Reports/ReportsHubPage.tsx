@@ -38,7 +38,7 @@ const ReportsHubPage = () => {
               Event Reports
             </h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Booking summaries, venue utilization, and office event activity.
+              Daily, weekly, and monthly event reports by department and venue.
             </p>
           </Link>
         )}
@@ -52,7 +52,7 @@ const ReportsHubPage = () => {
               Vehicle & Driver Reports
             </h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Trip summaries, vehicle utilization, and driver availability.
+              Daily, weekly, monthly, driver, and vehicle usage reports.
             </p>
           </Link>
         )}

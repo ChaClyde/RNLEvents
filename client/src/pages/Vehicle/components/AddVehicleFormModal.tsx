@@ -12,10 +12,15 @@ import {
   parseVehicleError,
   type VehicleFormValues,
 } from "../../../interfaces/VehicleHelpers";
+
 import VehicleFormFields, {
   VehicleFormError,
   VehiclePhotoPicker,
 } from "./VehicleFormFields";
+
+import VehicleMaintenanceSection, {
+  type MaintenanceDraft,
+} from "./VehicleMaintenanceSection";
 
 interface AddVehicleFormModalProps {
   onVehicleAdded: (message: string) => void;
@@ -35,14 +40,21 @@ const AddVehicleFormModal: FC<AddVehicleFormModalProps> = ({
   const [image, setImage] = useState<File | null>(null);
   const [errors, setErrors] = useState<VehicleFieldErrors>({});
   const [serverError, setServerError] = useState("");
+  const [drafts, setDrafts] = useState<MaintenanceDraft[]>([]);
 
-  // Start from a clean form every time the modal opens
+  // Reset the entire form
+  const resetForm = () => {
+    setForm(emptyVehicleForm);
+    setImage(null);
+    setErrors({});
+    setServerError("");
+    setDrafts([]);
+  };
+
+  // Reset whenever the modal opens
   useEffect(() => {
     if (isOpen) {
-      setForm(emptyVehicleForm);
-      setImage(null);
-      setErrors({});
-      setServerError("");
+      resetForm();
     }
   }, [isOpen]);
 
@@ -50,12 +62,21 @@ const AddVehicleFormModal: FC<AddVehicleFormModalProps> = ({
     field: K,
     value: VehicleFormValues[K],
   ) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    setErrors((prev) => ({ ...prev, [field]: undefined }));
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      [field]: undefined,
+    }));
   };
 
-  const handleStoreVehicle = async (e: FormEvent) => {
+  const handleStoreVehicle = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (loadingStore) return;
 
     try {
       setLoadingStore(true);
@@ -69,6 +90,7 @@ const AddVehicleFormModal: FC<AddVehicleFormModalProps> = ({
       if (res.status === 201) {
         onVehicleAdded(res.data.message);
         refreshKey();
+        resetForm();
         onClose();
       }
     } catch (error) {
@@ -93,6 +115,7 @@ const AddVehicleFormModal: FC<AddVehicleFormModalProps> = ({
         {/* Header */}
         <div className="relative overflow-hidden rounded-2xl border border-[#0095D9]/20 bg-[#0095D9]/5 p-6">
           <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#0095D9]/15 blur-3xl" />
+
           <div className="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-[#003B5C]/10 blur-3xl" />
 
           <div className="relative flex items-center gap-4">
@@ -102,6 +125,7 @@ const AddVehicleFormModal: FC<AddVehicleFormModalProps> = ({
 
             <div>
               <h1 className="text-2xl font-bold text-[#003B5C]">Add Vehicle</h1>
+
               <p className="mt-1 text-sm text-gray-500">
                 Add a vehicle with its photo, seating capacity and person in
                 charge so it can be picked when booking a trip.
@@ -124,6 +148,12 @@ const AddVehicleFormModal: FC<AddVehicleFormModalProps> = ({
           errors={errors}
           onChange={handleChange}
           autoFocus
+        />
+
+        <VehicleMaintenanceSection
+          vehicleId={null}
+          drafts={drafts}
+          onDraftsChange={setDrafts}
         />
 
         {/* Footer */}

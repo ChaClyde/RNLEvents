@@ -1,341 +1,490 @@
-import { useCallback, useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { FiAlertCircle, FiPlus, FiRefreshCw, FiTruck, FiX } from "react-icons/fi";
+import React, { useCallback, useEffect, useState } from "react";
+import { FiAlertCircle, FiPlus, FiRefreshCw, FiTruck } from "react-icons/fi";
+import { toast } from "sonner";
+
+import type {
+  VehicleBooking,
+  VehicleBookingDriver,
+  VehicleBookingOffice,
+  VehicleBookingVehicle,
+} from "../../interfaces/VehicleBookingColumns";
+
+import {
+  canApproveVehicleBooking,
+  canAssignVehicle,
+  getVehicleBookingErrorMessage,
+  isRequesterEditable,
+} from "../../interfaces/VehicleBookingHelpers";
 
 import VehicleBookingService from "../../services/VehicleBookingService";
-import VehicleService from "../../services/VehicleService";
-import DriverService from "../../services/DriverService";
 import OfficeService from "../../services/OfficeService";
 
-import type { VehicleBookingColumns, VehicleBookingFormData } from "../../interfaces/VehicleBookingColumns";
-import type { VehicleColumns } from "../../interfaces/VehicleColumns";
-import type { DriverColumns } from "../../interfaces/DriverColumns";
-import type { OfficeColumns } from "../../interfaces/OfficeColumns";
-import { isAssignmentStage, parseApiError } from "../../interfaces/VehicleBookingHelpers";
-
-import { useToastMessage } from "../../hooks/useToastMessage";
 import { usePermissions } from "../../hooks/usePermissions";
-import { useAuth } from "../../contexts/AuthContext";
 import { ApprovalPipeline, Permission } from "../../permissions/constants";
-import ToastMessage from "../../components/ToastMessage/ToastMessage";
 
-import VehicleBookingList from "./components/VehicleBookingList";
 import VehicleBookingAdd from "./components/VehicleBookingAdd";
 import VehicleBookingEdit from "./components/VehicleBookingEdit";
 import VehicleBookingView from "./components/VehicleBookingView";
+import VehicleBookingList from "./components/VehicleBookingList";
 
-const getResponseData = <T,>(response: unknown): T => {
-  const result = response as { data?: { data?: T } };
-  return result?.data?.data as T;
-};
+type PageMode = "list" | "add" | "edit" | "view";
 
-const VehicleBookingMainPage = () => {
-  const location = useLocation();
-  const isApprovalsRoute = location.pathname.startsWith("/approvals/vehicles");
-  const { user } = useAuth();
-  const { can, hasEmergencyBypass } = usePermissions();
+const VehicleBookingMainPage: React.FC = () => {
+  const { can } = usePermissions();
 
-  const [bookings, setBookings] = useState<VehicleBookingColumns[]>([]);
-  const [vehicles, setVehicles] = useState<VehicleColumns[]>([]);
-  const [drivers, setDrivers] = useState<DriverColumns[]>([]);
-  const [offices, setOffices] = useState<OfficeColumns[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editBooking, setEditBooking] = useState<VehicleBookingColumns | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [viewBooking, setViewBooking] = useState<VehicleBookingColumns | null>(null);
-  const [isActing, setIsActing] = useState(false);
-  const { message, isVisible, showToastMessage, closeToastMessage } = useToastMessage("", false);
-  const [toastIsFailed, setToastIsFailed] = useState(false);
+  // =====================================================
+  // STATES
+  // =====================================================
 
-  const canCreate =
-    can(Permission.VEHICLE_BOOKINGS_CREATE) || hasEmergencyBypass;
-
-  const notify = useCallback(
-    (text: string, isFailed = false) => {
-      setToastIsFailed(isFailed);
-      showToastMessage(text);
-    },
-    [showToastMessage],
+  const [bookings, setBookings] = useState<VehicleBooking[]>([]);
+  const [selectedBooking, setSelectedBooking] = useState<VehicleBooking | null>(
+    null,
   );
+  const [pageMode, setPageMode] = useState<PageMode>("list");
 
-  const loadBookings = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError("");
-      const response = await VehicleBookingService.loadVehicleBookings();
-      const data = getResponseData<VehicleBookingColumns[]>(response);
-      setBookings(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(parseApiError(err).message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const [loading, setLoading] = useState(false);
+  const [isActing, setIsActing] = useState(false);
 
-  const loadOptions = useCallback(async () => {
-    try {
-      const officeResponse = await OfficeService.loadOffices();
-      const officeData = officeResponse.data?.offices;
-      setOffices(Array.isArray(officeData) ? officeData : []);
-    } catch {
-      setOffices([]);
-    }
+  const [offices, setOffices] = useState<VehicleBookingOffice[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleBookingVehicle[]>([]);
+  const [drivers, setDrivers] = useState<VehicleBookingDriver[]>([]);
 
-    if (can(Permission.VEHICLES_VIEW)) {
-      try {
-        const response = await VehicleService.loadVehicles();
-        const data = getResponseData<VehicleColumns[]>(response);
-        setVehicles(Array.isArray(data) ? data : []);
-      } catch {
-        setVehicles([]);
-      }
-    }
+  // =====================================================
+  // PERMISSIONS
+  // The server decides in the end. These only show or hide buttons.
+  // =====================================================
 
-    if (can(Permission.DRIVERS_VIEW)) {
-      try {
-        const response = await DriverService.loadDrivers();
-        const data = getResponseData<DriverColumns[]>(response);
-        setDrivers(Array.isArray(data) ? data : []);
-      } catch {
-        setDrivers([]);
-      }
-    }
-  }, [can]);
+  const canCreate = can(Permission.VEHICLE_BOOKINGS_CREATE);
+  const canEdit = can(Permission.VEHICLE_BOOKINGS_EDIT);
+  const canDelete = can(Permission.VEHICLE_BOOKINGS_DELETE);
 
-  useEffect(() => {
-    loadBookings();
-    loadOptions();
-  }, [loadBookings, loadOptions]);
-
-  const bookingContext = (booking: VehicleBookingColumns) => ({
+  const bookingContext = (booking: VehicleBooking) => ({
     officeId: booking.office_id,
-    ownerId: booking.requested_by_user_id,
+    ownerId: booking.requested_by_user_id ?? booking.requester?.user_id,
     approvalStage: booking.approval_stage,
     approvalPipeline: ApprovalPipeline.VEHICLE,
   });
 
-  const canApproveBooking = (booking: VehicleBookingColumns) =>
+  // Only the role whose turn it is can approve or reject
+  const canApproveBooking = (booking: VehicleBooking) =>
     booking.status === "pending" &&
     can(Permission.VEHICLE_APPROVALS_APPROVE, bookingContext(booking));
 
-  const canCancelBooking = (booking: VehicleBookingColumns) =>
+  const canCancelBooking = (booking: VehicleBooking) =>
     (booking.status === "pending" || booking.status === "approved") &&
     can(Permission.VEHICLE_BOOKINGS_EDIT, bookingContext(booking));
 
-  const canAssignBooking = (booking: VehicleBookingColumns) =>
-    isAssignmentStage(booking) && canApproveBooking(booking);
+  // =====================================================
+  // LOAD BOOKINGS
+  // =====================================================
 
-  const handleAdd = async (data: VehicleBookingFormData) => {
+  const loadBookings = useCallback(async () => {
     try {
-      setIsSubmitting(true);
-      await VehicleBookingService.storeVehicleBooking(data);
-      setIsAddOpen(false);
-      notify("Vehicle booking submitted successfully!");
-      await loadBookings();
+      setLoading(true);
+
+      const response = await VehicleBookingService.getAll();
+
+      setBookings(Array.isArray(response.data) ? response.data : []);
+    } catch (error: unknown) {
+      toast.error(getVehicleBookingErrorMessage(error));
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    void loadBookings();
+  }, [loadBookings]);
+
+  // =====================================================
+  // LOAD VEHICLES, DRIVERS AND OFFICES
+  // =====================================================
+
+  useEffect(() => {
+    let active = true;
+
+    const loadOptions = async () => {
+      const [vehicleResult, driverResult, officeResult] =
+        await Promise.allSettled([
+          VehicleBookingService.getVehicles(),
+          VehicleBookingService.getDrivers(),
+          OfficeService.loadOffices(),
+        ]);
+
+      if (!active) return;
+
+      if (vehicleResult.status === "fulfilled") {
+        const data = vehicleResult.value.data;
+        setVehicles(Array.isArray(data) ? data : []);
+      } else {
+        toast.error(
+          `Unable to load vehicles: ${getVehicleBookingErrorMessage(
+            vehicleResult.reason,
+          )}`,
+        );
+      }
+
+      if (driverResult.status === "fulfilled") {
+        const data = driverResult.value.data;
+        setDrivers(Array.isArray(data) ? data : []);
+      } else {
+        toast.error(
+          `Unable to load drivers: ${getVehicleBookingErrorMessage(
+            driverResult.reason,
+          )}`,
+        );
+      }
+
+      // Offices only matter to roles that can book for any office, so a
+      // failure here is not an error for everyone else
+      if (officeResult.status === "fulfilled") {
+        const list: unknown = officeResult.value.data?.offices;
+        setOffices(Array.isArray(list) ? (list as VehicleBookingOffice[]) : []);
+      }
+    };
+
+    void loadOptions();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // =====================================================
+  // MODALS
+  // =====================================================
+
+  const handleCloseModal = () => {
+    if (isActing) return;
+
+    setPageMode("list");
+    setSelectedBooking(null);
   };
 
-  const handleUpdate = async (
-    vehicle_booking_id: number,
-    data: VehicleBookingFormData,
-  ) => {
+  const handleView = async (booking: VehicleBooking) => {
     try {
-      setIsUpdating(true);
-      await VehicleBookingService.updateVehicleBooking(vehicle_booking_id, data);
-      setEditBooking(null);
-      notify("Vehicle booking updated successfully!");
-      await loadBookings();
+      setLoading(true);
+
+      const response = await VehicleBookingService.getById(
+        booking.vehicle_booking_id,
+      );
+
+      setSelectedBooking(response.data);
+      setPageMode("view");
+    } catch (error: unknown) {
+      toast.error(getVehicleBookingErrorMessage(error));
     } finally {
-      setIsUpdating(false);
+      setLoading(false);
     }
   };
 
-  const handleDelete = async (booking: VehicleBookingColumns) => {
-    if (!window.confirm(`Move "${booking.purpose}" to the Trash Bin?`)) return;
-
-    try {
-      await VehicleBookingService.destroyVehicleBooking(booking.vehicle_booking_id);
-      notify("Vehicle booking moved to Trash Bin!");
-      await loadBookings();
-    } catch (err) {
-      notify(parseApiError(err).message, true);
+  const handleEdit = (booking: VehicleBooking) => {
+    if (!isRequesterEditable(booking)) {
+      toast.error("This booking can no longer be edited.");
+      return;
     }
+
+    setSelectedBooking(booking);
+    setPageMode("edit");
   };
 
-  const handleStatusChange = async (
-    booking: VehicleBookingColumns,
-    status: "approved" | "rejected" | "cancelled",
-    extra: { approval_remarks?: string; cancellation_reason?: string },
-  ) => {
+  const handleSaved = async () => {
+    setPageMode("list");
+    setSelectedBooking(null);
+
+    await loadBookings();
+  };
+
+  // =====================================================
+  // DELETE
+  // =====================================================
+
+  const handleDelete = async (booking: VehicleBooking) => {
+    const confirmed = window.confirm(
+      `Move vehicle booking #${booking.vehicle_booking_id} to Trash Bin?`,
+    );
+
+    if (!confirmed) return;
+
     try {
       setIsActing(true);
-      const response = await VehicleBookingService.updateVehicleBookingStatus(
+
+      const response = await VehicleBookingService.delete(
         booking.vehicle_booking_id,
-        { status, ...extra },
       );
-      const updated = getResponseData<VehicleBookingColumns>(response);
-      setViewBooking(updated);
-      notify(response.data.message);
+
+      toast.success(response.message || "Booking moved to Trash Bin.");
+
       await loadBookings();
-    } catch (err) {
-      notify(parseApiError(err).message, true);
+    } catch (error: unknown) {
+      toast.error(getVehicleBookingErrorMessage(error));
+    } finally {
+      setIsActing(false);
+    }
+  };
+
+  // =====================================================
+  // APPROVE / REJECT / CANCEL / ASSIGN
+  // =====================================================
+
+  const handleApprove = async () => {
+    if (!selectedBooking) return;
+
+    if (!canApproveVehicleBooking(selectedBooking)) {
+      toast.error(
+        "This booking cannot be approved yet. Assign a vehicle and a driver first.",
+      );
+      return;
+    }
+
+    try {
+      setIsActing(true);
+
+      const response = await VehicleBookingService.updateStatus(
+        selectedBooking.vehicle_booking_id,
+        { status: "approved" },
+      );
+
+      toast.success(response.message || "Booking approved.");
+      setSelectedBooking(response.data);
+
+      await loadBookings();
+    } catch (error: unknown) {
+      toast.error(getVehicleBookingErrorMessage(error));
+    } finally {
+      setIsActing(false);
+    }
+  };
+
+  const handleReject = async (remarks: string) => {
+    if (!selectedBooking) return;
+
+    try {
+      setIsActing(true);
+
+      const response = await VehicleBookingService.updateStatus(
+        selectedBooking.vehicle_booking_id,
+        { status: "rejected", approval_remarks: remarks.trim() },
+      );
+
+      toast.success(response.message || "Booking rejected.");
+      setSelectedBooking(response.data);
+
+      await loadBookings();
+    } catch (error: unknown) {
+      toast.error(getVehicleBookingErrorMessage(error));
+    } finally {
+      setIsActing(false);
+    }
+  };
+
+  const handleCancelBooking = async (reason: string) => {
+    if (!selectedBooking) return;
+
+    try {
+      setIsActing(true);
+
+      const response = await VehicleBookingService.updateStatus(
+        selectedBooking.vehicle_booking_id,
+        { status: "cancelled", cancellation_reason: reason.trim() },
+      );
+
+      toast.success(response.message || "Booking cancelled.");
+      setSelectedBooking(response.data);
+
+      await loadBookings();
+    } catch (error: unknown) {
+      toast.error(getVehicleBookingErrorMessage(error));
     } finally {
       setIsActing(false);
     }
   };
 
   const handleAssign = async (vehicleId: number, driverId: number) => {
-    if (!viewBooking) return;
+    if (!selectedBooking) return;
+
+    if (!canAssignVehicle(selectedBooking)) {
+      toast.error(
+        "Vehicle assignment is only allowed at the Vehicle Admin and Super Admin stages.",
+      );
+      return;
+    }
 
     try {
       setIsActing(true);
-      const response = await VehicleBookingService.assignVehicleBooking(
-        viewBooking.vehicle_booking_id,
+
+      const response = await VehicleBookingService.assign(
+        selectedBooking.vehicle_booking_id,
         { vehicle_id: vehicleId, driver_id: driverId },
       );
-      const updated = getResponseData<VehicleBookingColumns>(response);
-      setViewBooking(updated);
-      notify(response.data.message);
+
+      toast.success(response.message || "Vehicle and driver assigned.");
+      setSelectedBooking(response.data);
+
       await loadBookings();
-    } catch (err) {
-      notify(parseApiError(err).message, true);
+    } catch (error: unknown) {
+      toast.error(getVehicleBookingErrorMessage(error));
     } finally {
       setIsActing(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-4 text-gray-800 transition-colors dark:bg-[#101820] dark:text-gray-100 sm:p-6">
-      <ToastMessage
-        message={message}
-        isVisible={isVisible}
-        isFailed={toastIsFailed}
-        onClose={closeToastMessage}
-      />
+  // =====================================================
+  // SELECTED BOOKING CONDITIONS
+  // =====================================================
 
-      <div className="mx-auto max-w-[1600px] space-y-6">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#003B5C] text-white dark:bg-[#00679E]">
-              <FiTruck size={23} />
+  const canApproveSelected =
+    selectedBooking !== null && canApproveBooking(selectedBooking);
+
+  const canAssignSelected =
+    selectedBooking !== null &&
+    canApproveBooking(selectedBooking) &&
+    canAssignVehicle(selectedBooking);
+
+  const canCancelSelected =
+    selectedBooking !== null && canCancelBooking(selectedBooking);
+
+  // =====================================================
+  // RENDER
+  // =====================================================
+
+  const officeHeadBookings = bookings.filter(
+    (booking) => booking.approval_stage === "office_head",
+  );
+
+  return (
+    <>
+      <div className="min-h-screen bg-gray-50 p-4 text-gray-800 transition-colors dark:bg-[#101820] dark:text-gray-100 sm:p-6">
+        <div className="mx-auto max-w-[1600px] space-y-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#003B5C] text-white dark:bg-[#00679E]">
+                <FiTruck size={23} />
+              </div>
+
+              <div>
+                <h1 className="text-2xl font-bold text-[#003B5C] dark:text-white sm:text-3xl">
+                  Vehicle Booking
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Requests stay here until the Unit Head approves them. After that they move to Vehicle Approvals.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-[#003B5C] dark:text-white sm:text-3xl">
-                {isApprovalsRoute ? "Vehicle Approvals" : "Vehicle Booking"}
-              </h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {isApprovalsRoute
-                  ? "Review pending vehicle requests and assignments."
-                  : "Submit and track vehicle booking requests."}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void loadBookings()}
+                disabled={loading || isActing}
+                className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#17232E] dark:text-gray-200 dark:hover:bg-[#223443]"
+              >
+                <FiRefreshCw className={loading ? "animate-spin" : ""} size={16} />
+                Refresh
+              </button>
+
+              {canCreate && (
+                <button
+                  type="button"
+                  onClick={() => setPageMode("add")}
+                  className="flex items-center justify-center gap-2 rounded-lg bg-[#00679E] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#003B5C]"
+                >
+                  <FiPlus size={18} />
+                  New Vehicle Booking
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-[#17232E]">
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                Waiting for Unit Head
+              </p>
+              <div className="mt-2 flex items-center justify-between">
+                <h2 className="text-3xl font-bold text-[#003B5C] dark:text-white">
+                  {officeHeadBookings.length}
+                </h2>
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-[#00679E] dark:bg-blue-950/40 dark:text-blue-300">
+                  <FiTruck size={21} />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-gray-400">
+                These requests have not left Booking Management
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-[#17232E]">
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                Pending Unit Head review
+              </p>
+              <div className="mt-2 flex items-center justify-between">
+                <h2 className="text-3xl font-bold text-amber-600 dark:text-amber-400">
+                  {officeHeadBookings.filter((booking) => booking.status === "pending").length}
+                </h2>
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">
+                  <FiAlertCircle size={21} />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-gray-400">
+                {officeHeadBookings.filter((booking) => canApproveBooking(booking)).length} in your Unit Head queue
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                loadBookings();
-                loadOptions();
-              }}
-              className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium dark:border-gray-700 dark:bg-[#17232E]"
-            >
-              <FiRefreshCw size={16} />
-              Refresh
-            </button>
-            {canCreate && (
-              <button
-                type="button"
-                onClick={() => setIsAddOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-[#00679E] px-4 py-2.5 text-sm font-semibold text-white"
-              >
-                <FiPlus size={18} />
-                New Vehicle Booking
-              </button>
-            )}
-          </div>
-        </div>
 
-        {error && (
-          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <FiAlertCircle className="mt-0.5 shrink-0" />
-            <div className="flex-1">{error}</div>
-            <button type="button" onClick={() => setError("")}>
-              <FiX />
-            </button>
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="flex min-h-62.5 items-center justify-center rounded-xl border bg-white dark:border-gray-700 dark:bg-[#17232E]">
-            Loading vehicle bookings...
-          </div>
-        ) : (
           <VehicleBookingList
-            bookings={bookings}
-            onView={setViewBooking}
-            onEdit={setEditBooking}
+            bookings={officeHeadBookings}
+            loading={loading}
+            canEdit={canEdit}
+            canDelete={canDelete && !isActing}
+            onView={handleView}
+            onEdit={handleEdit}
             onDelete={handleDelete}
-            isAwaitingReview={canApproveBooking}
           />
-        )}
+        </div>
       </div>
 
-      {isAddOpen && (
+      {pageMode === "add" && (
         <VehicleBookingAdd
+          isOpen
           offices={offices}
-          defaultRequestedBy={user?.full_name ?? `${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim()}
-          defaultEmail={user?.email}
-          defaultOfficeId={user?.office_id}
-          onClose={() => setIsAddOpen(false)}
-          onSubmit={handleAdd}
-          isSubmitting={isSubmitting}
-        />
-      )}
-
-      {editBooking && (
-        <VehicleBookingEdit
-          booking={editBooking}
-          offices={offices}
-          onClose={() => setEditBooking(null)}
-          onSubmit={handleUpdate}
-          isSubmitting={isUpdating}
-        />
-      )}
-
-      {viewBooking && (
-        <VehicleBookingView
-          booking={viewBooking}
           vehicles={vehicles}
           drivers={drivers}
-          canApprove={canApproveBooking(viewBooking)}
-          canCancel={canCancelBooking(viewBooking)}
-          canAssign={canAssignBooking(viewBooking)}
+          onClose={handleCloseModal}
+          onSuccess={handleSaved}
+        />
+      )}
+
+      {pageMode === "edit" && selectedBooking && (
+        <VehicleBookingEdit
+          isOpen
+          booking={selectedBooking}
+          offices={offices}
+          vehicles={vehicles}
+          drivers={drivers}
+          onClose={handleCloseModal}
+          onSuccess={handleSaved}
+        />
+      )}
+
+      {pageMode === "view" && selectedBooking && (
+        <VehicleBookingView
+          isOpen
+          booking={selectedBooking}
+          vehicles={vehicles}
+          drivers={drivers}
+          canApprove={canApproveSelected}
+          canCancel={canCancelSelected}
+          canAssign={canAssignSelected}
           isActing={isActing}
-          onClose={() => setViewBooking(null)}
-          onApprove={(remarks) =>
-            handleStatusChange(viewBooking, "approved", {
-              approval_remarks: remarks || undefined,
-            })
-          }
-          onReject={(remarks) =>
-            handleStatusChange(viewBooking, "rejected", {
-              approval_remarks: remarks,
-            })
-          }
-          onCancel={(reason) =>
-            handleStatusChange(viewBooking, "cancelled", {
-              cancellation_reason: reason,
-            })
-          }
+          onClose={handleCloseModal}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onCancelBooking={handleCancelBooking}
           onAssign={handleAssign}
         />
       )}
-    </div>
+    </>
   );
 };
 

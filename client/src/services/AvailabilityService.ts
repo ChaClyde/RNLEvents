@@ -3,7 +3,14 @@ import type { ScheduleConflict } from "../interfaces/EventBookingHelpers";
 
 export interface AvailabilityResponse {
   available: boolean;
-  conflicts: ScheduleConflict[];
+  conflicts: (ScheduleConflict & {
+    destination?: string | null;
+    purpose?: string | null;
+    travel_date?: string | null;
+    expected_return_date?: string | null;
+    departure_time?: string | null;
+    expected_return_time?: string | null;
+  })[];
   message: string;
   unavailability_reason?: string | null;
   vehicle_status?: string;

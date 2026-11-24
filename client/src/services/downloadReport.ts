@@ -42,3 +42,25 @@ export const downloadReportResponse = async (
   link.remove();
   URL.revokeObjectURL(url);
 };
+
+export const printReportResponse = async (response: AxiosResponse<Blob>) => {
+  const type = String(response.headers["content-type"] ?? response.data.type ?? "");
+
+  if (type.includes("application/json")) {
+    const text = await response.data.text();
+    const parsed = JSON.parse(text) as { message?: string };
+    throw new Error(parsed.message || "Unable to print the report.");
+  }
+
+  const url = URL.createObjectURL(response.data);
+  const opened = window.open(url);
+  if (!opened) {
+    URL.revokeObjectURL(url);
+    throw new Error("Allow pop-ups to print this report.");
+  }
+
+  opened.addEventListener("load", () => {
+    opened.focus();
+    opened.print();
+  });
+};

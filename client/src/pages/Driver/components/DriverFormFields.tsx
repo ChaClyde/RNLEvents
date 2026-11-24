@@ -1,5 +1,5 @@
 import type { FC } from "react";
-import { AlertCircle, Calendar, ClipboardList, UserRound } from "lucide-react";
+import { AlertCircle, Calendar, UserRound } from "lucide-react";
 
 import FloatingLabelInput from "../../../components/Input/FloatingLabelInput";
 import FloatingLabelSelect from "../../../components/Select/FloatingLabelSelect";
@@ -8,7 +8,6 @@ import {
   type DriverFieldErrors,
   type DriverStatus,
 } from "../../../interfaces/DriverColumns";
-import type { VehicleColumns } from "../../../interfaces/VehicleColumns";
 import type { DriverFormValues } from "../../../interfaces/DriverHelpers";
 
 const controlClass =
@@ -66,7 +65,6 @@ const DateField: FC<{
 interface DriverFormFieldsProps {
   values: DriverFormValues;
   errors: DriverFieldErrors;
-  vehicles: VehicleColumns[];
   onChange: <K extends keyof DriverFormValues>(
     field: K,
     value: DriverFormValues[K],
@@ -77,7 +75,6 @@ interface DriverFormFieldsProps {
 const DriverFormFields: FC<DriverFormFieldsProps> = ({
   values,
   errors,
-  vehicles,
   onChange,
   autoFocus = false,
 }) => (
@@ -120,58 +117,14 @@ const DriverFormFields: FC<DriverFormFieldsProps> = ({
             errors={errors.email}
           />
         </div>
-      </div>
-    </div>
-
-    {/* License and Assignment */}
-    <div className="rounded-2xl border border-[#0095D9]/20 bg-white p-5">
-      <div className="mb-5 flex items-center gap-2">
-        <ClipboardList size={18} className="text-[#0095D9]" />
-        <h2 className="font-semibold text-[#003B5C]">License & Assignment</h2>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <FloatingLabelInput
-          label="License Number"
-          type="text"
-          name="license_number"
-          value={values.license_number}
-          onChange={(e) => onChange("license_number", e.target.value)}
-          errors={errors.license_number}
-        />
 
         <DateField
           id="driver_license_expiry"
-          label="License Expiry Date"
+          label="License expiry (optional)"
           value={values.license_expiry}
           error={errors.license_expiry?.[0]}
           onChange={(value) => onChange("license_expiry", value)}
         />
-
-        <FloatingLabelSelect
-          label="Usual Vehicle"
-          name="default_vehicle_id"
-          value={values.default_vehicle_id}
-          onChange={(e) => onChange("default_vehicle_id", e.target.value)}
-          errors={errors.default_vehicle_id}
-        >
-          <option value="">No usual vehicle</option>
-          {vehicles.map((vehicle) => (
-            <option key={vehicle.vehicle_id} value={vehicle.vehicle_id}>
-              {vehicle.vehicle_name} ({vehicle.plate_number})
-            </option>
-          ))}
-        </FloatingLabelSelect>
-
-        <label className="flex cursor-pointer items-center gap-3 self-center text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={values.is_reliever}
-            onChange={(e) => onChange("is_reliever", e.target.checked)}
-            className="h-4 w-4 accent-[#0095D9]"
-          />
-          Reliever driver
-        </label>
       </div>
     </div>
 
@@ -202,12 +155,12 @@ const DriverFormFields: FC<DriverFormFieldsProps> = ({
         {values.driver_status !== "Available" && (
           <>
             <FloatingLabelInput
-              label="Remarks (reason / notes)"
-              type="text"
-              name="status_remarks"
-              value={values.status_remarks}
-              onChange={(e) => onChange("status_remarks", e.target.value)}
-              errors={errors.status_remarks}
+              label="Contact Number"
+              type="number"
+              name="contact_number"
+              value={values.contact_number}
+              onChange={(e) => onChange("contact_number", e.target.value)}
+              errors={errors.contact_number}
             />
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

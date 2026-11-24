@@ -3,17 +3,19 @@ import {
   FiX,
   FiUpload,
   FiTrash2,
+  FiPlus,
+  FiPackage,
   FiMapPin,
   FiInfo,
   FiImage,
   FiUser,
   FiPhone,
   FiMail,
-  FiClock,
 } from "react-icons/fi";
 
 import VenueService from "../../../services/VenueService";
-import type { VenueColumns } from "../../../interfaces/VenueColumns";
+import VenueMaintenanceSection from "./VenueMaintenanceSection";
+import type { VenueColumns, VenueResourceInput } from "../../../interfaces/VenueColumns";
 
 interface EditVenueFormModalProps {
   isOpen: boolean;
@@ -28,6 +30,32 @@ const inputClass =
 
 const labelClass =
   "mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300";
+
+const defaultOvertimePolicy =
+  "Monday to Friday, 8:00 AM to 5:00 PM is regular time. Saturday, Sunday, time before 8:00 AM, and time from 5:00 PM onward are overtime.";
+
+type OvertimeResourceRate = {
+  resource_name: string;
+  overtime_rate: string;
+};
+
+type KeptCharge = {
+  charge_name: string;
+  charge_type: "facility" | "equipment" | "service";
+  amount: string;
+  unit: "per_hour" | "per_day" | "per_booking";
+  is_active: boolean;
+  venue_resource_id: number | null;
+};
+
+const emptyResource = (): VenueResourceInput => ({
+  resource_name: "",
+  total_quantity: null,
+  availability_type: "available",
+  condition: "good",
+  coordination_office: "",
+  notes: "",
+});
 
 const EditVenueFormModal = ({
   isOpen,
@@ -48,11 +76,20 @@ const EditVenueFormModal = ({
   const [picEmail, setPicEmail] = useState("");
 
   const [facilities, setFacilities] = useState("");
-  const [overtimeRate, setOvertimeRate] = useState("0");
-  const [overtimePolicy, setOvertimePolicy] = useState("");
   const [status, setStatus] = useState<"available" | "unavailable">(
     "available",
   );
+  const [resources, setResources] = useState<VenueResourceInput[]>([]);
+  const [pricingBasis, setPricingBasis] = useState<"hourly" | "daily">("hourly");
+  const [baseAmount, setBaseAmount] = useState("");
+  const [overtimeRate, setOvertimeRate] = useState("");
+  const [overtimePolicy, setOvertimePolicy] = useState(defaultOvertimePolicy);
+  const [overtimeResources, setOvertimeResources] = useState<OvertimeResourceRate[]>([]);
+  const [rateEffectiveFrom, setRateEffectiveFrom] = useState("");
+  const [rateId, setRateId] = useState<number | null>(null);
+  const [includedHours, setIncludedHours] = useState<string | null>(null);
+  const [loadedEffectiveFrom, setLoadedEffectiveFrom] = useState("");
+  const [keptCharges, setKeptCharges] = useState<KeptCharge[]>([]);
 
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -73,9 +110,93 @@ const EditVenueFormModal = ({
     setPicEmail(venue.pic_email ?? "");
 
     setFacilities((venue.facilities ?? []).join(", "));
-    setOvertimeRate(String(venue.overtime_rate ?? 0));
-    setOvertimePolicy(venue.overtime_policy ?? "");
     setStatus(venue.status);
+    setResources(
+      (venue.resources ?? []).map((resource) => ({
+        resource_id: resource.resource_id,
+        resource_name: resource.resource_name,
+        total_quantity: resource.total_quantity,
+        availability_type: resource.availability_type,
+        condition: resource.condition,
+        coordination_office: resource.coordination_office ?? "",
+        notes: resource.notes ?? "",
+      })),
+    );
+    setPricingBasis("hourly");
+    setBaseAmount("");
+    setOvertimeRate("");
+    setOvertimePolicy(defaultOvertimePolicy);
+    setOvertimeResources([]);
+    setRateEffectiveFrom(new Date().toISOString().slice(0, 10));
+    setRateId(null);
+    setIncludedHours(null);
+    setLoadedEffectiveFrom("");
+    setKeptCharges([]);
+
+    VenueService.loadRates(venue.venue_id)
+      .then((response) => {
+        const rates = (response.data.data ?? []) as Array<{
+          venue_rate_id: number;
+          pricing_basis: "hourly" | "daily";
+          hourly_rate: string | null;
+          daily_rate: string | null;
+          overtime_rate: string | null;
+          overtime_policy: string | null;
+          included_hours: string | null;
+          effective_from: string;
+          effective_to: string | null;
+          is_active: boolean;
+          charges?: Array<{
+            charge_name: string;
+            charge_type: "facility" | "equipment" | "service";
+            amount: string;
+            unit: string;
+            is_active: boolean;
+            venue_resource_id: number | null;
+          }>;
+        }>;
+        const today = new Date().toISOString().slice(0, 10);
+        const active = rates
+          .filter((rate) => rate.is_active && rate.effective_from <= today && (!rate.effective_to || rate.effective_to >= today))
+          .sort((left, right) => right.effective_from.localeCompare(left.effective_from))[0]
+          ?? rates.sort((left, right) => right.effective_from.localeCompare(left.effective_from))[0];
+
+        if (!active) return;
+
+        setRateId(active.venue_rate_id);
+        setLoadedEffectiveFrom(active.effective_from);
+        setRateEffectiveFrom(active.effective_from);
+        setPricingBasis(active.pricing_basis);
+        setBaseAmount(
+          active.pricing_basis === "hourly"
+            ? (active.hourly_rate ?? "")
+            : (active.daily_rate ?? ""),
+        );
+        setOvertimeRate(active.overtime_rate ?? "");
+        setOvertimePolicy(active.overtime_policy || defaultOvertimePolicy);
+        setIncludedHours(active.included_hours);
+        setOvertimeResources(
+          (active.charges ?? [])
+            .filter((charge) => charge.unit === "per_overtime_hour")
+            .map((charge) => ({
+              resource_name: charge.charge_name,
+              overtime_rate: String(charge.amount ?? ""),
+            })),
+        );
+        setKeptCharges(
+          (active.charges ?? [])
+            .filter((charge) => charge.unit !== "per_overtime_hour")
+            .map((charge) => ({
+              charge_name: charge.charge_name,
+              charge_type: charge.charge_type,
+              amount: String(charge.amount ?? ""),
+              unit: charge.unit as KeptCharge["unit"],
+              is_active: charge.is_active,
+              venue_resource_id: charge.venue_resource_id,
+            })),
+        );
+      })
+      .catch(() => undefined);
 
     setImage(null);
     setImagePreview(
@@ -116,6 +237,37 @@ const EditVenueFormModal = ({
     setRemoveImage(true);
   };
 
+  const updateResource = (
+    index: number,
+    field: keyof VenueResourceInput,
+    value: string,
+  ) => {
+    setResources((previous) =>
+      previous.map((resource, i) =>
+        i === index ? { ...resource, [field]: value } : resource,
+      ),
+    );
+  };
+
+  const addOvertimeResource = () => {
+    setOvertimeResources((previous) => [
+      ...previous,
+      { resource_name: "", overtime_rate: "" },
+    ]);
+  };
+
+  const updateOvertimeResource = (
+    index: number,
+    field: keyof OvertimeResourceRate,
+    value: string,
+  ) => {
+    setOvertimeResources((previous) =>
+      previous.map((resource, i) =>
+        i === index ? { ...resource, [field]: value } : resource,
+      ),
+    );
+  };
+
   const handleClose = () => {
     if (loading) return;
     onClose();
@@ -142,6 +294,34 @@ const EditVenueFormModal = ({
       clientErrors.location = "Location is required.";
     }
 
+    if (baseAmount !== "" && Number(baseAmount) < 0) {
+      clientErrors["rate.base_amount"] = "Enter a base rental of zero or more.";
+    }
+
+    if (overtimeRate !== "" && Number(overtimeRate) < 0) {
+      clientErrors["rate.overtime_rate"] = "Enter an overtime rate of zero or more.";
+    }
+
+    if (baseAmount === "" && (overtimeRate !== "" || overtimeResources.length > 0)) {
+      clientErrors["rate.base_amount"] = "Enter the base rental with the overtime rate.";
+    }
+
+    overtimeResources.forEach((resource, index) => {
+      if (!resource.resource_name.trim()) {
+        clientErrors[`rate.resources.${index}.resource_name`] = "Resource name is required.";
+      }
+      if (resource.overtime_rate === "" || Number(resource.overtime_rate) < 0) {
+        clientErrors[`rate.resources.${index}.overtime_rate`] =
+          "Enter an overtime rate of zero or more.";
+      }
+    });
+
+    resources.forEach((resource, index) => {
+      if (!resource.resource_name.trim()) {
+        clientErrors[`resources.${index}.resource_name`] = "Resource name is required.";
+      }
+    });
+
     if (Object.keys(clientErrors).length > 0) {
       setErrors(clientErrors);
       return;
@@ -156,8 +336,6 @@ const EditVenueFormModal = ({
     formData.append("person_in_charge", personInCharge.trim());
     formData.append("pic_contact_number", picContactNumber.trim());
     formData.append("pic_email", picEmail.trim());
-    formData.append("overtime_rate", overtimeRate || "0");
-    formData.append("overtime_policy", overtimePolicy);
     formData.append("status", status);
 
     const facilityList = facilities
@@ -180,10 +358,68 @@ const EditVenueFormModal = ({
       formData.append("remove_image", "1");
     }
 
+    resources.forEach((resource, index) => {
+      if (resource.resource_id) {
+        formData.append(`resources[${index}][resource_id]`, String(resource.resource_id));
+      }
+      formData.append(`resources[${index}][resource_name]`, resource.resource_name.trim());
+      formData.append(
+        `resources[${index}][total_quantity]`,
+        resource.total_quantity === null || resource.total_quantity === undefined
+          ? ""
+          : String(resource.total_quantity),
+      );
+      formData.append(`resources[${index}][availability_type]`, resource.availability_type);
+      formData.append(`resources[${index}][condition]`, resource.condition);
+      formData.append(
+        `resources[${index}][coordination_office]`,
+        resource.coordination_office ?? "",
+      );
+      formData.append(`resources[${index}][notes]`, resource.notes ?? "");
+    });
+
     try {
       setLoading(true);
 
       const response = await VenueService.updateVenue(venue.venue_id, formData);
+
+      if (response.status === 200 && baseAmount !== "") {
+        const charges = [
+          ...keptCharges.map((charge) => ({
+            charge_name: charge.charge_name,
+            charge_type: charge.charge_type,
+            amount: charge.amount,
+            unit: charge.unit,
+            is_active: charge.is_active,
+            venue_resource_id: charge.venue_resource_id,
+          })),
+          ...overtimeResources.map((resource) => ({
+            charge_name: resource.resource_name.trim(),
+            charge_type: "equipment" as const,
+            amount: resource.overtime_rate,
+            unit: "per_overtime_hour" as const,
+            is_active: true,
+            venue_resource_id: null,
+          })),
+        ];
+        const ratePayload = {
+          pricing_basis: pricingBasis,
+          hourly_rate: pricingBasis === "hourly" ? baseAmount : null,
+          daily_rate: pricingBasis === "daily" ? baseAmount : null,
+          overtime_rate: overtimeRate === "" ? 0 : overtimeRate,
+          overtime_policy: overtimePolicy.trim(),
+          included_hours: includedHours,
+          effective_from: rateEffectiveFrom,
+          is_active: true,
+          charges,
+        };
+
+        if (rateId && rateEffectiveFrom === loadedEffectiveFrom) {
+          await VenueService.updateRate(venue.venue_id, rateId, ratePayload);
+        } else {
+          await VenueService.storeRate(venue.venue_id, ratePayload);
+        }
+      }
 
       if (response.status === 200) {
         onClose();
@@ -229,8 +465,7 @@ const EditVenueFormModal = ({
                 Edit Venue
               </h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Update venue information, status, and its assigned person in
-                charge.
+                Update venue information, overtime rates, resources, and the person in charge.
               </p>
             </div>
           </div>
@@ -401,65 +636,28 @@ const EditVenueFormModal = ({
             </div>
           </section>
 
-          {/* Overtime & Status */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
-              <FiClock className="text-[#0095D9]" size={19} />
               <h3 className="font-semibold text-gray-900 dark:text-white">
-                Overtime & Status
+                Availability
               </h3>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className={labelClass}>Overtime Rate (₱)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={overtimeRate}
-                  onChange={(e) => setOvertimeRate(e.target.value)}
-                  className={inputClass}
-                />
-                {errors.overtime_rate && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {errors.overtime_rate}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className={labelClass}>Venue Status</label>
-                <select
-                  value={status}
-                  onChange={(e) =>
-                    setStatus(e.target.value as "available" | "unavailable")
-                  }
-                  className={inputClass}
-                >
-                  <option value="available">Available</option>
-                  <option value="unavailable">Unavailable</option>
-                </select>
-                {errors.status && (
-                  <p className="mt-1 text-xs text-red-500">{errors.status}</p>
-                )}
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className={labelClass}>Overtime Policy</label>
-                <textarea
-                  value={overtimePolicy}
-                  onChange={(e) => setOvertimePolicy(e.target.value)}
-                  rows={2}
-                  placeholder="Enter venue overtime policy..."
-                  className={inputClass}
-                />
-                {errors.overtime_policy && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {errors.overtime_policy}
-                  </p>
-                )}
-              </div>
+            <div>
+              <label className={labelClass}>Venue Status</label>
+              <select
+                value={status}
+                onChange={(e) =>
+                  setStatus(e.target.value as "available" | "unavailable")
+                }
+                className={inputClass}
+              >
+                <option value="available">Available</option>
+                <option value="unavailable">Unavailable</option>
+              </select>
+              {errors.status && (
+                <p className="mt-1 text-xs text-red-500">{errors.status}</p>
+              )}
             </div>
           </section>
 
@@ -515,6 +713,284 @@ const EditVenueFormModal = ({
               <p className="text-xs text-red-500">{errors.venue_image}</p>
             )}
           </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                Overtime Rates
+              </h3>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Monday to Friday, 8:00 AM to 5:00 PM is regular time. Saturday, Sunday, time before 8:00 AM, and time from 5:00 PM onward are overtime.
+            </p>
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Regular time</label>
+                  <input value="Monday–Friday, 8:00 AM – 5:00 PM" readOnly className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Billing basis</label>
+                  <select
+                    value={pricingBasis}
+                    onChange={(e) => setPricingBasis(e.target.value as "hourly" | "daily")}
+                    className={inputClass}
+                  >
+                    <option value="hourly">Hourly rental</option>
+                    <option value="daily">Daily rental</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>
+                    {pricingBasis === "hourly" ? "Base rental per hour" : "Base rental per day"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={baseAmount}
+                    onChange={(e) => setBaseAmount(e.target.value)}
+                    className={inputClass}
+                  />
+                  {errors["rate.base_amount"] && (
+                    <p className="mt-1 text-xs text-red-500">{errors["rate.base_amount"]}</p>
+                  )}
+                </div>
+                <div>
+                  <label className={labelClass}>Overtime rate per hour</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={overtimeRate}
+                    onChange={(e) => setOvertimeRate(e.target.value)}
+                    className={inputClass}
+                  />
+                  {errors["rate.overtime_rate"] && (
+                    <p className="mt-1 text-xs text-red-500">{errors["rate.overtime_rate"]}</p>
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Effective date</label>
+                  <input
+                    type="date"
+                    value={rateEffectiveFrom}
+                    onChange={(e) => setRateEffectiveFrom(e.target.value)}
+                    className={inputClass}
+                  />
+                  {errors.effective_from && (
+                    <p className="mt-1 text-xs text-red-500">{errors.effective_from}</p>
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Overtime note / policy</label>
+                  <textarea
+                    value={overtimePolicy}
+                    onChange={(e) => setOvertimePolicy(e.target.value)}
+                    rows={3}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Resource overtime rates
+                </p>
+                <button
+                  type="button"
+                  onClick={addOvertimeResource}
+                  className="flex items-center gap-2 rounded-xl bg-[#003B5C] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#00679E]"
+                >
+                  <FiPlus />
+                  Add
+                </button>
+              </div>
+              {overtimeResources.length === 0 && (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No overtime resource rates yet. Use Add to charge a resource for each overtime hour.
+                </p>
+              )}
+              {overtimeResources.map((resource, index) => (
+                <div
+                  key={index}
+                  className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:grid-cols-[1fr_1fr_auto] dark:border-gray-700 dark:bg-gray-900"
+                >
+                  <div>
+                    <label className={labelClass}>Resource name</label>
+                    <input
+                      value={resource.resource_name}
+                      onChange={(e) => updateOvertimeResource(index, "resource_name", e.target.value)}
+                      className={inputClass}
+                    />
+                    {errors[`rate.resources.${index}.resource_name`] && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {errors[`rate.resources.${index}.resource_name`]}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelClass}>Rate per overtime hour</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={resource.overtime_rate}
+                      onChange={(e) => updateOvertimeResource(index, "overtime_rate", e.target.value)}
+                      className={inputClass}
+                    />
+                    {errors[`rate.resources.${index}.overtime_rate`] && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {errors[`rate.resources.${index}.overtime_rate`]}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOvertimeResources((previous) => previous.filter((_, i) => i !== index))
+                      }
+                      className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-red-600 transition hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <FiTrash2 size={14} />
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <FiPackage className="text-[#0095D9]" size={19} />
+                <h3 className="font-semibold text-gray-900 dark:text-white">
+                  Venue Resources & Inventory
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResources((previous) => [...previous, emptyResource()])}
+                className="flex items-center gap-2 rounded-xl bg-[#003B5C] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#00679E]"
+              >
+                <FiPlus />
+                Add Resource
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Record equipment and supplies available at this venue.
+            </p>
+            {resources.length === 0 && (
+              <div className="rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                No resources added yet. Click "Add Resource" to get started.
+              </div>
+            )}
+            {resources.map((resource, index) => (
+              <div
+                key={resource.resource_id ?? `new-${index}`}
+                className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-[#003B5C] dark:text-[#0095D9]">
+                    Resource #{index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setResources((previous) => previous.filter((_, i) => i !== index))}
+                    className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-red-600 transition hover:bg-red-50 dark:hover:bg-red-900/20"
+                  >
+                    <FiTrash2 size={14} />
+                    Remove
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className={labelClass}>Resource Name *</label>
+                    <input
+                      value={resource.resource_name}
+                      onChange={(e) => updateResource(index, "resource_name", e.target.value)}
+                      className={inputClass}
+                    />
+                    {errors[`resources.${index}.resource_name`] && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {errors[`resources.${index}.resource_name`]}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelClass}>Quantity</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={resource.total_quantity ?? ""}
+                      onChange={(e) =>
+                        setResources((previous) =>
+                          previous.map((item, i) =>
+                            i === index
+                              ? {
+                                  ...item,
+                                  total_quantity: e.target.value === "" ? null : Number(e.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Availability</label>
+                    <select
+                      value={resource.availability_type}
+                      onChange={(e) => updateResource(index, "availability_type", e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="available">Available</option>
+                      <option value="consult_required">Consult required</option>
+                      <option value="borrowed">Borrowed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Condition</label>
+                    <select
+                      value={resource.condition}
+                      onChange={(e) => updateResource(index, "condition", e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="good">Good</option>
+                      <option value="fair">Fair</option>
+                      <option value="damaged">Damaged</option>
+                      <option value="not_applicable">Not applicable</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Coordination office</label>
+                    <input
+                      value={resource.coordination_office ?? ""}
+                      onChange={(e) => updateResource(index, "coordination_office", e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Notes</label>
+                    <input
+                      value={resource.notes ?? ""}
+                      onChange={(e) => updateResource(index, "notes", e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </section>
+
+          {venue && (
+            <VenueMaintenanceSection
+              venueId={venue.venue_id}
+              onChanged={onSuccess}
+            />
+          )}
 
           <div className="flex justify-end gap-3 border-t border-gray-200 pt-5 dark:border-gray-700">
             <button

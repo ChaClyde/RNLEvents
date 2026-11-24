@@ -1,8 +1,14 @@
+import type { VehicleMaintenanceColumns } from "./VehicleMaintenanceColumns";
+
 // ============================================================
 // STATUS
 // ============================================================
 
+// What is saved: a manual on/off switch
 export type VehicleStatus = "available" | "unavailable" | "maintenance";
+
+// What is shown: the manual switch combined with the maintenance sheet
+export type VehicleAvailabilityStatus = VehicleStatus | "maintenance";
 
 // ============================================================
 // VEHICLE
@@ -26,8 +32,15 @@ export interface VehicleColumns {
   pic_contact_number: string | null;
   pic_email: string | null;
 
-  // Availability
+  // Availability (manual switch)
   status: VehicleStatus;
+
+  // Availability (computed by the API on the vehicle list and detail
+  // endpoints; not included in the Trash Bin list)
+  availability_status?: VehicleAvailabilityStatus;
+  availability_message?: string | null; // ready to show to users
+  current_maintenance?: VehicleMaintenanceColumns | null;
+  next_maintenance?: VehicleMaintenanceColumns | null;
 
   // Image
   image_path: string | null;
