@@ -8,14 +8,18 @@ use App\Models\Role;
 use App\Models\User;
 use App\Models\Venue;
 use App\Permissions\Permission;
+use App\Signatures\SignatureStorage;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Tests\Support\ProvidesUserSignature;
 use Tests\TestCase;
 
 class ApiDataScopingTest extends TestCase
 {
+    use ProvidesUserSignature;
     use RefreshDatabase;
 
     private Office $officeA;
@@ -66,7 +70,11 @@ class ApiDataScopingTest extends TestCase
         $this->studentA = $this->userFor(Role::STUDENT_REPUBLIC);
         $this->studentB = $this->userFor(Role::STUDENT_REPUBLIC, $this->officeB);
         $this->eventAdmin = $this->userFor(Role::EVENT_ADMIN);
-        $this->eventApprover = $this->userFor(Role::EVENT_APPROVAL_ADMIN);
+        $this->eventApprover = $this->userFor(Role::ADMIN_APPROVALS);
+        Storage::fake(SignatureStorage::USER_DISK);
+        Storage::fake(SignatureStorage::APPROVAL_DISK);
+        $this->giveSignature($this->facultyA);
+        $this->giveSignature($this->studentA);
     }
 
     public function test_dean_user_list_is_limited_to_their_office(): void
@@ -308,8 +316,9 @@ class ApiDataScopingTest extends TestCase
         return [
             'venue_id' => $this->venue->venue_id,
             'purpose' => 'Faculty request',
-            'date_start' => now()->toDateString(),
-            'date_end' => now()->toDateString(),
+            'schedule_type' => 'range',
+            'date_start' => now()->addDays(2)->toDateString(),
+            'date_end' => now()->addDays(2)->toDateString(),
             'time_start' => '13:00',
             'time_end' => '14:00',
             'expected_attendees' => 5,

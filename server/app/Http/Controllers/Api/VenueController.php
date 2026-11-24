@@ -18,10 +18,58 @@ class VenueController extends Controller
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * @param  array<string, mixed>|null  $rate
+     */
+    private function storeOpeningRate(Venue $venue, ?array $rate, ?int $createdBy): void
+    {
+        if ($rate === null || !isset($rate['base_amount']) || $rate['base_amount'] === '') {
+            return;
+        }
+
+        $basis = ($rate['pricing_basis'] ?? 'hourly') === 'daily' ? 'daily' : 'hourly';
+        $amount = $rate['base_amount'];
+
+        $policy = trim((string) ($rate['overtime_policy'] ?? ''));
+
+        $saved = $venue->rates()->create([
+            'pricing_basis' => $basis,
+            'hourly_rate' => $basis === 'hourly' ? $amount : null,
+            'daily_rate' => $basis === 'daily' ? $amount : null,
+            'overtime_rate' => $rate['overtime_rate'] ?? 0,
+            'overtime_policy' => $policy !== ''
+                ? $policy
+                : 'Monday to Friday, 8:00 AM to 5:00 PM is regular time. Saturday, Sunday, time before 8:00 AM, and time from 5:00 PM onward are overtime.',
+            'included_hours' => null,
+            'effective_from' => $rate['effective_from'] ?? now()->toDateString(),
+            'is_active' => true,
+            'created_by' => $createdBy,
+        ]);
+
+        foreach ($rate['resources'] ?? [] as $resource) {
+            $name = trim((string) ($resource['resource_name'] ?? ''));
+
+            if ($name === '') {
+                continue;
+            }
+
+            $saved->charges()->create([
+                'charge_name' => $name,
+                'charge_type' => 'equipment',
+                'amount' => $resource['overtime_rate'] ?? 0,
+                'unit' => 'per_overtime_hour',
+                'is_active' => true,
+            ]);
+        }
+    }
+
     private function venueRelations(): array
     {
         return [
             'resources',
+            'maintenance' => fn ($query) => $query
+                ->where('status', 'scheduled')
+                ->orderBy('date_start'),
         ];
     }
 
@@ -147,6 +195,47 @@ class VenueController extends Controller
                 'string',
             ],
 
+            'rate' => [
+                'nullable',
+                'array',
+            ],
+            'rate.pricing_basis' => [
+                'nullable',
+                Rule::in(['hourly', 'daily']),
+            ],
+            'rate.base_amount' => [
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+            'rate.overtime_rate' => [
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+            'rate.overtime_policy' => [
+                'nullable',
+                'string',
+            ],
+            'rate.effective_from' => [
+                'nullable',
+                'date',
+            ],
+            'rate.resources' => [
+                'nullable',
+                'array',
+            ],
+            'rate.resources.*.resource_name' => [
+                'required',
+                'string',
+                'max:100',
+            ],
+            'rate.resources.*.overtime_rate' => [
+                'required',
+                'numeric',
+                'min:0',
+            ],
+
             // Venue Status
             'status' => [
                 'nullable',
@@ -259,6 +348,8 @@ class VenueController extends Controller
                     'notes' => $resource['notes'] ?? null,
                 ]);
             }
+
+            $this->storeOpeningRate($venue, $validated['rate'] ?? null, $request->user()?->user_id);
 
             DB::commit();
 

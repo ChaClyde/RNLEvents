@@ -4,50 +4,93 @@ namespace App\Models;
 
 use App\Permissions\ApprovalStage;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class VehicleBooking extends Model
 {
-    protected $table = 'tbl_vehicle_bookings';
+    use HasFactory;
 
+    protected $table = 'tbl_vehicle_bookings';
     protected $primaryKey = 'vehicle_booking_id';
 
     protected $fillable = [
+        // Requestor
         'requested_by_user_id',
         'office_id',
         'requested_by',
         'email',
         'tel_number',
+
+        // Trip
         'destination',
         'purpose',
         'remarks',
+
+        // Schedule
         'travel_date',
         'departure_time',
         'expected_return_date',
         'expected_return_time',
+
+        // Passengers
         'passenger_count',
         'passenger_details',
+
+        'charge_area',
+        'driver_meal_rate',
+        'meal_count',
+        'driver_meal_amount',
+        'charge_lines',
+        'charge_total',
+        'calculation_confirmed_at',
+        'calculation_confirmed_stage',
+
+        'requester_signature_path',
+        'requester_signature_mime',
+        'requester_signer_name',
+        'requester_signer_position',
+
+        // Vehicle and Driver
         'vehicle_id',
         'driver_id',
+
+        // Status and Approval
         'status',
         'approval_stage',
         'approval_remarks',
         'cancellation_reason',
+
         'is_deleted',
     ];
 
-    protected $casts = [
-        'travel_date' => 'date:Y-m-d',
-        'expected_return_date' => 'date:Y-m-d',
-        'passenger_count' => 'integer',
-        'requested_by_user_id' => 'integer',
-        'office_id' => 'integer',
-        'vehicle_id' => 'integer',
-        'driver_id' => 'integer',
-        'is_deleted' => 'boolean',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'travel_date' => 'date:Y-m-d',
+            'expected_return_date' => 'date:Y-m-d',
+            'passenger_count' => 'integer',
+            'meal_count' => 'integer',
+            'driver_meal_rate' => 'decimal:2',
+            'driver_meal_amount' => 'decimal:2',
+            'charge_lines' => 'array',
+            'charge_total' => 'decimal:2',
+            'calculation_confirmed_at' => 'datetime',
+            'requested_by_user_id' => 'integer',
+            'office_id' => 'integer',
+            'vehicle_id' => 'integer',
+            'driver_id' => 'integer',
+            'is_deleted' => 'boolean',
+        ];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
 
     public function requester(): BelongsTo
     {
@@ -78,6 +121,50 @@ class VehicleBooking extends Model
         )->orderBy('vehicle_booking_approval_id');
     }
 
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(
+            VehicleBookingAttachment::class,
+            'vehicle_booking_id',
+            'vehicle_booking_id'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scopes
+    |--------------------------------------------------------------------------
+    */
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_deleted', false);
+    }
+
+    public function scopeDeleted($query)
+    {
+        return $query->where('is_deleted', true);
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
+    }
+
+    // Bookings that still hold their vehicle and driver
+    public function scopeScheduleBlocking($query)
+    {
+        return $query
+            ->where('is_deleted', false)
+            ->whereIn('status', ['pending', 'approved']);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Helpers
+    |--------------------------------------------------------------------------
+    */
+
     public function isRequesterEditable(): bool
     {
         return $this->status === 'pending'
@@ -107,23 +194,6 @@ class VehicleBooking extends Model
     public function overlapsTrip(Carbon $start, Carbon $end): bool
     {
         return $this->tripStartsAt()->lt($end) && $this->tripEndsAt()->gt($start);
-    }
-
-    public function scopeActive($query)
-    {
-        return $query->where('is_deleted', false);
-    }
-
-    public function scopePending($query)
-    {
-        return $query->where('status', 'pending');
-    }
-
-    public function scopeScheduleBlocking($query)
-    {
-        return $query
-            ->where('is_deleted', false)
-            ->whereIn('status', ['pending', 'approved']);
     }
 
     private function timeValue(mixed $time): string

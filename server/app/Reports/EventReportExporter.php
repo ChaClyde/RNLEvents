@@ -55,7 +55,18 @@ class EventReportExporter
             $row['cancelled'],
         ], $payload['offices']);
 
+        $highlightRows = array_map(
+            fn (array $row) => [$row['label'], $row['value']],
+            $payload['highlights'] ?? []
+        );
+
         return ReportExportSupport::excel($payload, [
+            [
+                'name' => 'Highlights',
+                'headers' => ['Finding', 'Result'],
+                'rows' => $highlightRows,
+                'widths' => [42, 36],
+            ],
             [
                 'name' => 'Event Bookings',
                 'headers' => ['ID', 'Purpose', 'Requested by', 'Office', 'Venue', 'Start date', 'End date', 'Status', 'Approval stage'],

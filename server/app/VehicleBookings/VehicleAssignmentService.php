@@ -42,6 +42,7 @@ class VehicleAssignmentService
             ->lockForUpdate()
             ->findOrFail($driverId);
 
+        // Status, scheduled maintenance, capacity and trip conflicts
         $this->conflicts->assertVehicleAvailable($actor, $vehicle, $booking);
         $this->conflicts->assertDriverAvailable($actor, $driver, $booking);
 

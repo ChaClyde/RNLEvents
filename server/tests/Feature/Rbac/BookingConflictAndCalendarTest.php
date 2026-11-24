@@ -11,14 +11,18 @@ use App\Models\Vehicle;
 use App\Models\VehicleBooking;
 use App\Models\Venue;
 use App\Permissions\ApprovalStage;
+use App\Signatures\SignatureStorage;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Tests\Support\ProvidesUserSignature;
 use Tests\TestCase;
 
 class BookingConflictAndCalendarTest extends TestCase
 {
+    use ProvidesUserSignature;
     use RefreshDatabase;
 
     private Office $officeA;
@@ -93,6 +97,11 @@ class BookingConflictAndCalendarTest extends TestCase
         foreach (Role::SYSTEM_SLUGS as $slug) {
             $this->users[$slug] = $this->userFor($slug);
         }
+
+        Storage::fake(SignatureStorage::USER_DISK);
+        Storage::fake(SignatureStorage::APPROVAL_DISK);
+        $this->giveSignature($this->users[Role::FACULTY_STAFF]);
+        $this->giveSignature($this->users[Role::STUDENT_REPUBLIC]);
     }
 
     public function test_same_venue_overlap_is_rejected_and_different_venues_are_allowed(): void
@@ -113,10 +122,22 @@ class BookingConflictAndCalendarTest extends TestCase
                 'time_start' => '10:00',
                 'time_end' => '12:00',
             ]))
-            ->assertStatus(422);
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('venue_id');
 
-        $conflict->assertJsonPath('available', false);
-        $conflict->assertJsonPath('conflicts.0.status', 'pending');
+        $this->assertStringContainsString('already booked', $conflict->json('errors.venue_id.0'));
+        $this->assertArrayNotHasKey('available', $conflict->json());
+
+        $this->asRole(Role::FACULTY_STAFF)
+            ->postJson('/api/event-bookings/checkAvailability', $this->eventPayload([
+                'purpose' => 'Overlapping lecture',
+                'venue_id' => $this->hallA->venue_id,
+                'time_start' => '10:00',
+                'time_end' => '12:00',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('available', false)
+            ->assertJsonPath('conflicts.0.conflicts_with.0.status', 'pending');
 
         $this->asRole(Role::FACULTY_STAFF)
             ->postJson('/api/event-bookings/storeEventBooking', $this->eventPayload([
@@ -130,8 +151,8 @@ class BookingConflictAndCalendarTest extends TestCase
         $this->asRole(Role::FACULTY_STAFF)
             ->getJson('/api/availability/venues?' . http_build_query([
                 'venue_id' => $this->hallA->venue_id,
-                'date_start' => now()->toDateString(),
-                'date_end' => now()->toDateString(),
+                'date_start' => now()->addDays(2)->toDateString(),
+                'date_end' => now()->addDays(2)->toDateString(),
                 'time_start' => '10:00',
                 'time_end' => '12:00',
             ]))
@@ -141,8 +162,8 @@ class BookingConflictAndCalendarTest extends TestCase
         $this->asRole(Role::FACULTY_STAFF)
             ->getJson('/api/availability/venues?' . http_build_query([
                 'venue_id' => $this->hallA->venue_id,
-                'date_start' => now()->toDateString(),
-                'date_end' => now()->toDateString(),
+                'date_start' => now()->addDays(2)->toDateString(),
+                'date_end' => now()->addDays(2)->toDateString(),
                 'time_start' => '10:00',
                 'time_end' => '12:00',
                 'exclude_event_booking_id' => $first['event_booking_id'],
@@ -195,8 +216,8 @@ class BookingConflictAndCalendarTest extends TestCase
     {
         $this->asRole(Role::FACULTY_STAFF)
             ->postJson('/api/event-bookings/storeEventBooking', $this->eventPayload([
-                'date_start' => now()->toDateString(),
-                'date_end' => now()->addDays(2)->toDateString(),
+                'date_start' => now()->addDays(2)->toDateString(),
+                'date_end' => now()->addDays(4)->toDateString(),
                 'time_start' => '08:00',
                 'time_end' => '17:00',
             ]))
@@ -205,12 +226,23 @@ class BookingConflictAndCalendarTest extends TestCase
         $this->asRole(Role::FACULTY_STAFF)
             ->postJson('/api/event-bookings/storeEventBooking', $this->eventPayload([
                 'purpose' => 'Inner day',
-                'date_start' => now()->addDay()->toDateString(),
-                'date_end' => now()->addDay()->toDateString(),
+                'date_start' => now()->addDays(3)->toDateString(),
+                'date_end' => now()->addDays(3)->toDateString(),
                 'time_start' => '10:00',
                 'time_end' => '11:00',
             ]))
             ->assertStatus(422)
+            ->assertJsonValidationErrors('venue_id');
+
+        $this->asRole(Role::FACULTY_STAFF)
+            ->postJson('/api/event-bookings/checkAvailability', $this->eventPayload([
+                'purpose' => 'Inner day',
+                'date_start' => now()->addDays(3)->toDateString(),
+                'date_end' => now()->addDays(3)->toDateString(),
+                'time_start' => '10:00',
+                'time_end' => '11:00',
+            ]))
+            ->assertOk()
             ->assertJsonPath('available', false);
     }
 
@@ -278,7 +310,8 @@ class BookingConflictAndCalendarTest extends TestCase
                 'vehicle_id' => $this->vanA->vehicle_id,
                 'driver_id' => $expired->driver_id,
             ])
-            ->assertStatus(422);
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('driver_id');
 
         $this->asRole(Role::VEHICLE_ADMIN)
             ->getJson('/api/availability/vehicles?' . http_build_query([
@@ -310,10 +343,12 @@ class BookingConflictAndCalendarTest extends TestCase
             ->postJson('/api/event-bookings/storeEventBooking', $this->eventPayload())
             ->assertCreated();
 
+        $bookedOn = now()->addDays(2)->toDateString();
+
         $own = $this->asRole(Role::FACULTY_STAFF)
             ->getJson('/api/calendar?' . http_build_query([
-                'from' => now()->toDateString(),
-                'to' => now()->toDateString(),
+                'from' => $bookedOn,
+                'to' => $bookedOn,
             ]))
             ->assertOk()
             ->json('data');
@@ -326,8 +361,8 @@ class BookingConflictAndCalendarTest extends TestCase
 
         $this->asRole(Role::VEHICLE_ADMIN)
             ->getJson('/api/calendar?' . http_build_query([
-                'from' => now()->toDateString(),
-                'to' => now()->toDateString(),
+                'from' => $bookedOn,
+                'to' => $bookedOn,
             ]))
             ->assertOk()
             ->assertJsonMissing(['title' => 'Conflict lecture']);
@@ -396,6 +431,11 @@ class BookingConflictAndCalendarTest extends TestCase
         $this->asRole(Role::FACULTY_STAFF)
             ->postJson('/api/event-bookings/storeEventBooking', $payload)
             ->assertStatus(422)
+            ->assertJsonValidationErrors('venue_id');
+
+        $this->asRole(Role::FACULTY_STAFF)
+            ->postJson('/api/event-bookings/checkAvailability', $payload)
+            ->assertOk()
             ->assertJsonPath('available', false);
     }
 
@@ -410,8 +450,9 @@ class BookingConflictAndCalendarTest extends TestCase
         return array_merge([
             'venue_id' => $this->hallA->venue_id,
             'purpose' => 'Conflict lecture',
-            'date_start' => now()->toDateString(),
-            'date_end' => now()->toDateString(),
+            'schedule_type' => 'range',
+            'date_start' => now()->addDays(2)->toDateString(),
+            'date_end' => now()->addDays(2)->toDateString(),
             'time_start' => '09:00',
             'time_end' => '11:00',
             'expected_attendees' => 10,
@@ -433,8 +474,8 @@ class BookingConflictAndCalendarTest extends TestCase
         return array_merge([
             'venue_id' => $this->hallA->venue_id,
             'purpose' => 'Blocked record',
-            'date_start' => now()->toDateString(),
-            'date_end' => now()->toDateString(),
+            'date_start' => now()->addDays(2)->toDateString(),
+            'date_end' => now()->addDays(2)->toDateString(),
             'time_start' => '09:00:00',
             'time_end' => '11:00:00',
             'number_of_days' => 1,

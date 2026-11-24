@@ -22,6 +22,8 @@ class User extends Authenticatable
 
     protected $fillable = [
         'profile_photo',
+        'signature_path',
+        'signature_mime',
         'first_name',
         'middle_name',
         'last_name',
@@ -41,6 +43,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'signature_path',
     ];
 
     protected $casts = [

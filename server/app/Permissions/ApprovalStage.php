@@ -9,6 +9,7 @@ final class ApprovalStage
     public const EVENT_ADMIN = 'event_admin';
     public const VEHICLE_APPROVAL = 'vehicle_approval';
     public const VEHICLE_ADMIN = 'vehicle_admin';
+    public const OIC_BUDGET = 'oic_budget';
     public const SUPER_ADMIN = 'super_admin';
 
     public const PIPELINE_EVENT = 'event';
@@ -29,8 +30,9 @@ final class ApprovalStage
     {
         return [
             self::OFFICE_HEAD,
-            self::VEHICLE_APPROVAL,
             self::VEHICLE_ADMIN,
+            self::VEHICLE_APPROVAL,
+            self::OIC_BUDGET,
             self::SUPER_ADMIN,
         ];
     }

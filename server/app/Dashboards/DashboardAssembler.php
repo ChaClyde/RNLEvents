@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use App\Models\VehicleMaintenance;
 
 class DashboardAssembler
 {
@@ -37,8 +38,8 @@ class DashboardAssembler
             Role::SUPER_ADMIN => $this->superAdmin($user, $from, $to, $granularity),
             Role::EVENT_ADMIN => $this->eventAdmin($user, $from, $to, $granularity),
             Role::VEHICLE_ADMIN => $this->vehicleAdmin($user, $from, $to, $granularity),
-            Role::EVENT_APPROVAL_ADMIN => $this->eventApprovalAdmin($user, $from, $to),
-            Role::VEHICLE_APPROVAL_ADMIN => $this->vehicleApprovalAdmin($user, $from, $to),
+            Role::ADMIN_APPROVALS => $this->eventApprovalAdmin($user, $from, $to),
+            Role::OIC_BUDGET => $this->vehicleApprovalAdmin($user, $from, $to),
             Role::DEAN_OFFICE_HEAD => $this->dean($user, $from, $to, $granularity),
             Role::FACULTY_STAFF => $this->faculty($user, $from, $to),
             Role::STUDENT_REPUBLIC => $this->student($user, $from, $to),
@@ -248,15 +249,14 @@ class DashboardAssembler
                     Vehicle::query()->where('is_deleted', false)->where('status', 'available')->count(),
                 ),
                 $this->card(
+                    'available_vehicles',
+                    'Available Vehicles',
+                    Vehicle::query()->where('is_deleted', false)->availableToday()->count(),
+                ),
+                $this->card(
                     'vehicles_maintenance',
                     'Vehicles Under Maintenance',
-                    Vehicle::query()->where('is_deleted', false)->where('status', 'maintenance')->count(),
-                ),
-                $this->card('total_drivers', 'Total Drivers', Driver::query()->where('is_deleted', false)->count()),
-                $this->card(
-                    'available_drivers',
-                    'Available Drivers',
-                    Driver::query()->where('is_deleted', false)->where('driver_status', 'Available')->count(),
+                    Vehicle::query()->where('is_deleted', false)->underMaintenanceToday()->count(),
                 ),
             ],
             'charts' => [
@@ -1022,17 +1022,18 @@ class DashboardAssembler
     private function maintenanceOverview(): array
     {
         return Vehicle::query()
+            ->with('upcomingMaintenance')
             ->where('is_deleted', false)
-            ->where('status', 'maintenance')
+            ->underMaintenanceToday()
             ->orderBy('vehicle_name')
             ->limit(8)
-            ->get(['vehicle_id', 'vehicle_name', 'plate_number', 'status'])
+            ->get()
             ->map(fn (Vehicle $vehicle) => [
                 'id' => $vehicle->vehicle_id,
                 'type' => 'vehicle',
                 'title' => $vehicle->vehicle_name,
-                'status' => $vehicle->status,
-                'detail' => $vehicle->plate_number,
+                'status' => 'maintenance',
+                'detail' => $vehicle->current_maintenance?->reason ?: $vehicle->plate_number,
             ])
             ->all();
     }
@@ -1192,8 +1193,8 @@ class DashboardAssembler
             Role::SUPER_ADMIN => 'Super Admin',
             Role::EVENT_ADMIN => 'Event Admin',
             Role::VEHICLE_ADMIN => 'Vehicle Admin',
-            Role::EVENT_APPROVAL_ADMIN => 'Event Approval Admin',
-            Role::VEHICLE_APPROVAL_ADMIN => 'Vehicle Approval Admin',
+            Role::ADMIN_APPROVALS => 'Admin Approvals',
+            Role::OIC_BUDGET => 'OIC, Accounting/Budget Office',
             Role::DEAN_OFFICE_HEAD => 'Dean / Office Head',
             Role::FACULTY_STAFF => 'Faculty / Staff',
             Role::STUDENT_REPUBLIC => 'Student Republic',

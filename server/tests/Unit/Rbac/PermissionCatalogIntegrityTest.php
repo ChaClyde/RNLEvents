@@ -102,7 +102,7 @@ class PermissionCatalogIntegrityTest extends TestCase
         );
         $this->assertSame(
             [ApprovalStage::EVENT_APPROVAL],
-            PermissionCatalog::ruleFor(Role::EVENT_APPROVAL_ADMIN, Permission::EVENT_APPROVALS_APPROVE)?->approvalStages
+            PermissionCatalog::ruleFor(Role::ADMIN_APPROVALS, Permission::EVENT_APPROVALS_APPROVE)?->approvalStages
         );
         $this->assertSame(
             [ApprovalStage::OFFICE_HEAD],
@@ -114,11 +114,15 @@ class PermissionCatalogIntegrityTest extends TestCase
         );
         $this->assertSame(
             [ApprovalStage::VEHICLE_APPROVAL],
-            PermissionCatalog::ruleFor(Role::VEHICLE_APPROVAL_ADMIN, Permission::VEHICLE_APPROVALS_APPROVE)?->approvalStages
+            PermissionCatalog::ruleFor(Role::ADMIN_APPROVALS, Permission::VEHICLE_APPROVALS_APPROVE)?->approvalStages
         );
         $this->assertSame(
             [ApprovalStage::OFFICE_HEAD],
             PermissionCatalog::ruleFor(Role::DEAN_OFFICE_HEAD, Permission::VEHICLE_APPROVALS_APPROVE)?->approvalStages
+        );
+        $this->assertSame(
+            [ApprovalStage::OIC_BUDGET],
+            PermissionCatalog::ruleFor(Role::OIC_BUDGET, Permission::VEHICLE_APPROVALS_APPROVE)?->approvalStages
         );
 
         $this->assertNull(

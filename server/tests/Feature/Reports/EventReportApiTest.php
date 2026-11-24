@@ -111,7 +111,7 @@ class EventReportApiTest extends TestCase
     {
         $this->seedBookings();
 
-        $this->asRole(Role::EVENT_APPROVAL_ADMIN)
+        $this->asRole(Role::ADMIN_APPROVALS)
             ->getJson('/api/reports/events/summary')
             ->assertOk()
             ->assertJsonPath('data.limited', true)
@@ -160,7 +160,7 @@ class EventReportApiTest extends TestCase
             ->getJson('/api/reports/events/summary')
             ->assertForbidden();
 
-        $this->asRole(Role::VEHICLE_APPROVAL_ADMIN)
+        $this->asRole(Role::ADMIN_APPROVALS)
             ->getJson('/api/reports/events/venues')
             ->assertForbidden();
     }

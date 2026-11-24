@@ -20,17 +20,12 @@ class DriverController extends Controller
         'driver_name',
         'contact_number',
         'email',
-        'license_number',
         'license_expiry',
-        'is_reliever',
-        'default_vehicle_id',
         'driver_status',
         'status_remarks',
         'status_start_date',
         'status_end_date',
     ];
-
-    private const VEHICLE_RELATION = 'defaultVehicle:vehicle_id,vehicle_name,plate_number';
 
     /*
     |--------------------------------------------------------------------------
@@ -48,25 +43,7 @@ class DriverController extends Controller
 
             'contact_number' => ['sometimes', 'nullable', 'string', 'max:30'],
             'email' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
-
-            'license_number' => [
-                'sometimes',
-                'nullable',
-                'string',
-                'max:50',
-                Rule::unique('tbl_drivers', 'license_number')
-                    ->ignore($driver?->driver_id, 'driver_id'),
-            ],
             'license_expiry' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
-
-            'is_reliever' => ['sometimes', 'boolean'],
-
-            'default_vehicle_id' => [
-                'sometimes',
-                'nullable',
-                'integer',
-                Rule::exists('tbl_vehicles', 'vehicle_id')->where('is_deleted', false),
-            ],
 
             'driver_status' => ['sometimes', 'nullable', Rule::in(self::STATUSES)],
             'status_remarks' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -81,8 +58,6 @@ class DriverController extends Controller
             'driver_name.required' => 'Driver name is required.',
             'driver_name.min' => 'Driver name must be at least 3 characters.',
             'driver_name.max' => 'Driver name must not exceed 100 characters.',
-            'license_number.unique' => 'A driver with this license number already exists (they may be in the Trash Bin).',
-            'default_vehicle_id.exists' => 'The selected vehicle is not available.',
             'driver_status.in' => 'Invalid driver status.',
             'status_remarks.max' => 'Remarks must not exceed 255 characters.',
         ];
@@ -131,14 +106,13 @@ class DriverController extends Controller
     |--------------------------------------------------------------------------
     |
     | Optional ?available_on=YYYY-MM-DD returns only drivers who can be
-    | assigned on that date (leave status and license considered).
+    | assigned on that date (leave status considered).
     |
     */
 
     public function loadDrivers(Request $request)
     {
-        $query = Driver::with(self::VEHICLE_RELATION)
-            ->where('is_deleted', false);
+        $query = Driver::where('is_deleted', false);
 
         if ($request->filled('available_on')) {
             $request->validate([
@@ -162,9 +136,7 @@ class DriverController extends Controller
 
     public function getDriver($driver_id)
     {
-        $driver = Driver::with(self::VEHICLE_RELATION)
-            ->where('is_deleted', false)
-            ->findOrFail($driver_id);
+        $driver = Driver::where('is_deleted', false)->findOrFail($driver_id);
 
         return response()->json([
             'message' => 'Driver retrieved successfully.',
@@ -193,7 +165,7 @@ class DriverController extends Controller
 
         return response()->json([
             'message' => 'Driver successfully created.',
-            'data' => $driver->fresh()->load(self::VEHICLE_RELATION),
+            'data' => $driver->fresh(),
         ], 201);
     }
 
@@ -227,7 +199,7 @@ class DriverController extends Controller
 
         return response()->json([
             'message' => 'Driver successfully updated.',
-            'data' => $driver->fresh()->load(self::VEHICLE_RELATION),
+            'data' => $driver->fresh(),
         ], 200);
     }
 
@@ -261,8 +233,7 @@ class DriverController extends Controller
 
     public function loadTrashDrivers()
     {
-        $drivers = Driver::with(self::VEHICLE_RELATION)
-            ->where('is_deleted', true)
+        $drivers = Driver::where('is_deleted', true)
             ->orderByDesc('updated_at')
             ->get();
 
@@ -288,7 +259,7 @@ class DriverController extends Controller
 
         return response()->json([
             'message' => 'Driver restored successfully.',
-            'data' => $driver->fresh()->load(self::VEHICLE_RELATION),
+            'data' => $driver->fresh(),
         ], 200);
     }
 

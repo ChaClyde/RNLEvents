@@ -83,6 +83,23 @@
         </tr>
     </table>
 
+    @if (!empty($report['highlights']))
+        <h2>Highlights</h2>
+        <table class="data">
+            <thead>
+                <tr><th>Finding</th><th>Result</th></tr>
+            </thead>
+            <tbody>
+                @foreach ($report['highlights'] as $highlight)
+                    <tr>
+                        <td>{{ $highlight['label'] }}</td>
+                        <td>{{ $highlight['value'] }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
+
     @yield('content')
 
     @if (!empty($report['truncated']))

@@ -8,7 +8,10 @@ use App\Models\User;
 use App\Permissions\ApprovalStage;
 use App\Permissions\Permission;
 use App\Permissions\PermissionContext;
+use App\Notifications\SystemNotifier;
+use App\Signatures\SignatureStorage;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -25,6 +28,7 @@ class EventApprovalWorkflow
             $input['approved_by_user_id'],
             $input['approver_user_id'],
             $input['approver_id'],
+            $input['decision_slot'],
             $input['emergency_bypass'],
         );
 
@@ -51,31 +55,54 @@ class EventApprovalWorkflow
         $this->assertPending($booking);
         $this->assertKnownStage($booking);
         $this->assertCanDecide($actor, $booking);
-        $this->assertStageNotDecided($booking);
 
         $remarks = $this->nullableText($input['approval_remarks'] ?? null);
         $stage = $booking->approval_stage;
-        $nextStage = ApprovalStage::nextEventStage($stage);
+        $slot = null;
+        $this->assertTurnAvailable($booking);
+        $this->assertCalculationConfirmed($booking, $stage);
+        $snapshot = SignatureStorage::copyForApproval($actor);
 
-        $this->recordDecision($booking, $actor, $stage, EventBookingApproval::ACTION_APPROVED, $remarks);
+        try {
+            $this->recordDecision(
+                $booking,
+                $actor,
+                $stage,
+                EventBookingApproval::ACTION_APPROVED,
+                $remarks,
+                $snapshot,
+                $slot,
+            );
 
-        if ($nextStage === null || ApprovalStage::isFinalEventStage($stage)) {
+            $nextStage = ApprovalStage::nextEventStage($stage);
+
+            if ($nextStage === null || ApprovalStage::isFinalEventStage($stage)) {
+                $booking->update([
+                    'status' => 'approved',
+                    'approval_stage' => $stage,
+                    'approval_remarks' => $remarks ?? $booking->approval_remarks,
+                ]);
+
+                $approved = $booking->fresh();
+                app(ApprovedEventRecorder::class)->record($approved);
+                app(SystemNotifier::class)->bookingDecided($approved, $actor);
+
+                return $approved;
+            }
+
             $booking->update([
-                'status' => 'approved',
-                'approval_stage' => $stage,
+                'status' => 'pending',
+                'approval_stage' => $nextStage,
                 'approval_remarks' => $remarks ?? $booking->approval_remarks,
             ]);
 
+            app(SystemNotifier::class)->bookingDecided($booking, $actor);
+
             return $booking;
+        } catch (Throwable $exception) {
+            SignatureStorage::deleteApprovalFile($snapshot['signature_path']);
+            throw $exception;
         }
-
-        $booking->update([
-            'status' => 'pending',
-            'approval_stage' => $nextStage,
-            'approval_remarks' => $remarks ?? $booking->approval_remarks,
-        ]);
-
-        return $booking;
     }
 
     private function reject(User $actor, EventBooking $booking, array $input): EventBooking
@@ -83,20 +110,31 @@ class EventApprovalWorkflow
         $this->assertPending($booking);
         $this->assertKnownStage($booking);
         $this->assertCanDecide($actor, $booking);
-        $this->assertStageNotDecided($booking);
 
         $remarks = $this->requiredText(
             $input['approval_remarks'] ?? null,
             'approval_remarks',
             'A rejection remark is required.',
         );
+        $slot = null;
+        $this->assertTurnAvailable($booking);
 
-        $this->recordDecision($booking, $actor, $booking->approval_stage, EventBookingApproval::ACTION_REJECTED, $remarks);
+        $this->recordDecision(
+            $booking,
+            $actor,
+            $booking->approval_stage,
+            EventBookingApproval::ACTION_REJECTED,
+            $remarks,
+            null,
+            $slot,
+        );
 
         $booking->update([
             'status' => 'rejected',
             'approval_remarks' => $remarks,
         ]);
+
+        app(SystemNotifier::class)->bookingDecided($booking, $actor);
 
         return $booking;
     }
@@ -110,6 +148,7 @@ class EventApprovalWorkflow
         }
 
         $this->assertCanCancel($actor, $booking);
+        $wasApproved = $booking->status === 'approved';
 
         $reason = $this->requiredText(
             $input['cancellation_reason'] ?? null,
@@ -121,6 +160,12 @@ class EventApprovalWorkflow
             'status' => 'cancelled',
             'cancellation_reason' => $reason,
         ]);
+
+        if ($wasApproved) {
+            app(ApprovedEventRecorder::class)->withdraw($booking);
+        }
+
+        app(SystemNotifier::class)->bookingDecided($booking, $actor);
 
         return $booking;
     }
@@ -143,14 +188,30 @@ class EventApprovalWorkflow
         }
     }
 
-    private function assertStageNotDecided(EventBooking $booking): void
+    private function assertCalculationConfirmed(EventBooking $booking, string $stage): void
     {
-        $exists = EventBookingApproval::query()
+        if ($stage !== ApprovalStage::EVENT_APPROVAL) {
+            return;
+        }
+
+        $snapshot = $booking->feeSnapshot()->first();
+
+        if ($snapshot !== null && $snapshot->calculation_confirmed_at === null) {
+            throw ValidationException::withMessages([
+                'status' => ['Confirm the venue calculation before approving this booking.'],
+            ]);
+        }
+    }
+
+    private function assertTurnAvailable(EventBooking $booking): void
+    {
+        $existing = EventBookingApproval::query()
             ->where('event_booking_id', $booking->event_booking_id)
             ->where('approval_stage', $booking->approval_stage)
-            ->exists();
+            ->lockForUpdate()
+            ->get();
 
-        if ($exists) {
+        if ($existing->isNotEmpty()) {
             throw ValidationException::withMessages([
                 'status' => ['This approval stage has already been decided.'],
             ]);
@@ -198,14 +259,29 @@ class EventApprovalWorkflow
         }
     }
 
-    private function recordDecision(EventBooking $booking, User $actor, string $stage, string $action, ?string $remarks): void
-    {
+    /**
+     * @param  array{signature_path: string, signature_mime: string, signer_name: string, signer_position: ?string}|null  $snapshot
+     */
+    private function recordDecision(
+        EventBooking $booking,
+        User $actor,
+        string $stage,
+        string $action,
+        ?string $remarks,
+        ?array $snapshot = null,
+        ?string $slot = null,
+    ): void {
         EventBookingApproval::create([
             'event_booking_id' => $booking->event_booking_id,
             'approver_user_id' => $actor->user_id,
             'approval_stage' => $stage,
+            'decision_slot' => $slot,
             'action' => $action,
             'remarks' => $remarks,
+            'signature_path' => $snapshot['signature_path'] ?? null,
+            'signature_mime' => $snapshot['signature_mime'] ?? null,
+            'signer_name' => $snapshot['signer_name'] ?? null,
+            'signer_position' => $snapshot['signer_position'] ?? null,
         ]);
     }
 

@@ -42,7 +42,7 @@ class PermissionMatrixTest extends TestCase
         ]);
     }
 
-    public function test_role_seeder_is_idempotent_and_creates_eight_system_roles(): void
+    public function test_role_seeder_is_idempotent_and_creates_the_system_roles(): void
     {
         $this->seed(RoleSeeder::class);
 
@@ -71,8 +71,8 @@ class PermissionMatrixTest extends TestCase
             Role::SUPER_ADMIN,
             Role::EVENT_ADMIN,
             Role::VEHICLE_ADMIN,
-            Role::EVENT_APPROVAL_ADMIN,
-            Role::VEHICLE_APPROVAL_ADMIN,
+            Role::ADMIN_APPROVALS,
+            Role::OIC_BUDGET,
             Role::DEAN_OFFICE_HEAD,
             Role::FACULTY_STAFF,
             Role::STUDENT_REPUBLIC,
@@ -89,24 +89,28 @@ class PermissionMatrixTest extends TestCase
         $no = false;
 
         $matrix = [
-            Permission::ROLES_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no],
-            Permission::OFFICES_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no],
-            Permission::USERS_VIEW => [$yes, $no, $no, $no, $no, $yes, $no, $no],
-            Permission::VENUES_VIEW => [$yes, $yes, $no, $no, $no, $no, $no, $no],
-            Permission::EVENTS_VIEW => [$yes, $yes, $no, $no, $no, $no, $no, $no],
-            Permission::VEHICLES_VIEW => [$yes, $no, $yes, $no, $no, $no, $no, $no],
-            Permission::DRIVERS_VIEW => [$yes, $no, $yes, $no, $no, $no, $no, $no],
-            Permission::EVENT_BOOKINGS_CREATE => [$no, $no, $no, $no, $no, $no, $yes, $yes],
-            Permission::VEHICLE_BOOKINGS_CREATE => [$no, $no, $no, $no, $no, $no, $yes, $no],
-            Permission::EVENT_APPROVALS_APPROVE => [$yes, $yes, $no, $yes, $no, $yes, $no, $no],
-            Permission::VEHICLE_APPROVALS_APPROVE => [$yes, $no, $yes, $no, $yes, $yes, $no, $no],
-            Permission::EVENT_APPROVALS_VIEW => [$yes, $yes, $no, $yes, $no, $yes, $yes, $yes],
-            Permission::VEHICLE_APPROVALS_VIEW => [$yes, $no, $yes, $no, $yes, $yes, $yes, $no],
-            Permission::REPORTS_VIEW => [$yes, $yes, $yes, $yes, $yes, $yes, $no, $no],
-            Permission::SYSTEM_HISTORY_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no],
-            Permission::AUDIT_LOGS_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no],
-            Permission::SETTINGS_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no],
-            Permission::EMERGENCY_BYPASS => [$yes, $no, $no, $no, $no, $no, $no, $no],
+            Permission::ROLES_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no, $no, $no],
+            Permission::OFFICES_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no, $no, $no],
+            Permission::USERS_VIEW => [$yes, $no, $no, $no, $no, $yes, $no, $no, $no, $no],
+            Permission::VENUES_VIEW => [$yes, $yes, $no, $no, $no, $no, $no, $no, $yes, $yes],
+            Permission::VENUE_RATES_VIEW => [$yes, $yes, $no, $no, $no, $no, $no, $no, $yes, $yes],
+            Permission::VENUE_RATES_CREATE => [$yes, $yes, $no, $no, $no, $no, $no, $no, $yes, $no],
+            Permission::VENUES_EDIT => [$yes, $yes, $no, $no, $no, $no, $no, $no, $yes, $no],
+            Permission::EVENTS_VIEW => [$yes, $yes, $no, $yes, $no, $yes, $yes, $yes, $no, $no],
+            Permission::VEHICLES_VIEW => [$yes, $no, $yes, $no, $no, $no, $no, $no, $no, $no],
+            Permission::DRIVERS_VIEW => [$yes, $no, $yes, $no, $no, $no, $no, $no, $no, $no],
+            Permission::EVENT_BOOKINGS_CREATE => [$no, $no, $no, $no, $no, $no, $yes, $yes, $no, $no],
+            Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE => [$yes, $yes, $no, $no, $no, $no, $no, $no, $no, $no],
+            Permission::VEHICLE_BOOKINGS_CREATE => [$no, $no, $no, $no, $no, $no, $yes, $no, $no, $no],
+            Permission::EVENT_APPROVALS_APPROVE => [$yes, $yes, $no, $yes, $no, $yes, $no, $no, $no, $no],
+            Permission::VEHICLE_APPROVALS_APPROVE => [$yes, $no, $yes, $yes, $yes, $yes, $no, $no, $no, $no],
+            Permission::EVENT_APPROVALS_VIEW => [$yes, $yes, $no, $yes, $no, $yes, $yes, $yes, $yes, $yes],
+            Permission::VEHICLE_APPROVALS_VIEW => [$yes, $no, $yes, $yes, $yes, $yes, $yes, $no, $no, $no],
+            Permission::REPORTS_VIEW => [$yes, $yes, $yes, $yes, $yes, $yes, $no, $no, $no, $no],
+            Permission::SYSTEM_HISTORY_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no, $no, $no],
+            Permission::AUDIT_LOGS_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no, $no, $no],
+            Permission::SETTINGS_VIEW => [$yes, $no, $no, $no, $no, $no, $no, $no, $no, $no],
+            Permission::EMERGENCY_BYPASS => [$yes, $no, $no, $no, $no, $no, $no, $no, $no, $no],
         ];
 
         foreach ($matrix as $ability => $flags) {
@@ -181,8 +185,8 @@ class PermissionMatrixTest extends TestCase
 
     public function test_approval_admins_are_limited_to_their_stage_and_pipeline(): void
     {
-        $eventApprover = $this->userFor(Role::EVENT_APPROVAL_ADMIN);
-        $vehicleApprover = $this->userFor(Role::VEHICLE_APPROVAL_ADMIN);
+        $eventApprover = $this->userFor(Role::ADMIN_APPROVALS);
+        $vehicleApprover = $this->userFor(Role::ADMIN_APPROVALS);
         $eventAdmin = $this->userFor(Role::EVENT_ADMIN);
 
         $this->assertTrue($eventApprover->allows(Permission::EVENT_APPROVALS_APPROVE, [
@@ -195,14 +199,21 @@ class PermissionMatrixTest extends TestCase
             'approval_pipeline' => ApprovalStage::PIPELINE_EVENT,
         ]));
 
-        $this->assertFalse($eventApprover->allows(Permission::VEHICLE_APPROVALS_APPROVE));
-
-        $this->assertTrue($vehicleApprover->allows(Permission::VEHICLE_APPROVALS_APPROVE, [
+        $this->assertTrue($eventApprover->allows(Permission::VEHICLE_APPROVALS_APPROVE, [
             'approval_stage' => ApprovalStage::VEHICLE_APPROVAL,
             'approval_pipeline' => ApprovalStage::PIPELINE_VEHICLE,
         ]));
+        $this->assertFalse($eventApprover->allows(Permission::VEHICLE_APPROVALS_APPROVE, [
+            'approval_stage' => ApprovalStage::OIC_BUDGET,
+            'approval_pipeline' => ApprovalStage::PIPELINE_VEHICLE,
+        ]));
 
-        $this->assertFalse($vehicleApprover->allows(Permission::EVENT_APPROVALS_APPROVE));
+        $oic = $this->userFor(Role::OIC_BUDGET);
+        $this->assertTrue($oic->allows(Permission::VEHICLE_APPROVALS_APPROVE, [
+            'approval_stage' => ApprovalStage::OIC_BUDGET,
+            'approval_pipeline' => ApprovalStage::PIPELINE_VEHICLE,
+        ]));
+        $this->assertFalse($oic->allows(Permission::EVENT_APPROVALS_APPROVE));
 
         $this->assertTrue($eventAdmin->allows(Permission::EVENT_APPROVALS_APPROVE, [
             'approval_stage' => ApprovalStage::EVENT_ADMIN,

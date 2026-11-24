@@ -15,7 +15,16 @@ class VehicleController extends Controller
 {
     private const DISK = 'vehicles';
 
+    // "maintenance" is not a manual status; it comes from the maintenance sheet
     private const STATUSES = ['available', 'unavailable', 'maintenance'];
+
+    // Computed fields sent with every vehicle response
+    private const AVAILABILITY_ATTRIBUTES = [
+        'availability_status',
+        'availability_message',
+        'current_maintenance',
+        'next_maintenance',
+    ];
 
     // Columns that may be written from the request
     private const FIELDS = [
@@ -81,6 +90,7 @@ class VehicleController extends Controller
             'plate_number.unique' => 'A vehicle with this plate number already exists (it may be in the Trash Bin).',
             'capacity.required' => 'Seating capacity is required.',
             'capacity.integer' => 'Seating capacity must be a whole number.',
+            'status.in' => 'Status must be available, unavailable, or under maintenance.',
         ];
     }
 
@@ -93,6 +103,14 @@ class VehicleController extends Controller
         }
     }
 
+    // Adds availability_status, availability_message and the maintenance info
+    private function present(Vehicle $vehicle): Vehicle
+    {
+        return $vehicle
+            ->loadMissing('upcomingMaintenance')
+            ->append(self::AVAILABILITY_ATTRIBUTES);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Load All Active Vehicles
@@ -101,9 +119,13 @@ class VehicleController extends Controller
 
     public function loadVehicles()
     {
-        $vehicles = Vehicle::where('is_deleted', false)
+        // upcomingMaintenance is loaded once for all vehicles (no N+1 queries)
+        $vehicles = Vehicle::with('upcomingMaintenance')
+            ->where('is_deleted', false)
             ->orderBy('vehicle_name')
             ->get();
+
+        $vehicles->each(fn (Vehicle $vehicle) => $vehicle->append(self::AVAILABILITY_ATTRIBUTES));
 
         return response()->json([
             'message' => 'Vehicles retrieved successfully.',
@@ -119,11 +141,13 @@ class VehicleController extends Controller
 
     public function getVehicle($vehicle_id)
     {
-        $vehicle = Vehicle::where('is_deleted', false)->findOrFail($vehicle_id);
+        $vehicle = Vehicle::with('upcomingMaintenance')
+            ->where('is_deleted', false)
+            ->findOrFail($vehicle_id);
 
         return response()->json([
             'message' => 'Vehicle retrieved successfully.',
-            'data' => $vehicle,
+            'data' => $this->present($vehicle),
         ], 200);
     }
 
@@ -167,7 +191,7 @@ class VehicleController extends Controller
 
         return response()->json([
             'message' => 'Vehicle created successfully.',
-            'data' => $vehicle->fresh(),
+            'data' => $this->present($vehicle->fresh()),
         ], 201);
     }
 
@@ -226,12 +250,12 @@ class VehicleController extends Controller
             Storage::disk(self::DISK)->delete($oldImage);
         }
 
-        // TODO (booking module): when status becomes unavailable or maintenance,
+        // TODO (booking module): when status becomes unavailable,
         // warn about pending/approved upcoming bookings for this vehicle.
 
         return response()->json([
             'message' => 'Vehicle updated successfully.',
-            'data' => $vehicle->fresh(),
+            'data' => $this->present($vehicle->fresh()),
         ], 200);
     }
 
@@ -287,7 +311,7 @@ class VehicleController extends Controller
 
         return response()->json([
             'message' => 'Vehicle restored successfully.',
-            'data' => $vehicle->fresh(),
+            'data' => $this->present($vehicle->fresh()),
         ], 200);
     }
 
@@ -304,6 +328,7 @@ class VehicleController extends Controller
         $imagePath = $vehicle->image_path;
 
         try {
+            // Its maintenance records are removed automatically (cascadeOnDelete)
             $vehicle->delete();
         } catch (QueryException $e) {
             // 23000 = foreign key violation (vehicle still has bookings)
@@ -348,11 +373,12 @@ class VehicleController extends Controller
             ], 404);
         }
 
-        // The image URL carries ?v=<updated_at>, so it is safe to cache
+        // The image URL carries ?v=<updated_at>, so it is safe to cache.
+        // "private": this route needs a login, so shared caches must not keep it.
         return Storage::disk(self::DISK)->response(
             $vehicle->image_path,
             null,
-            ['Cache-Control' => 'public, max-age=86400']
+            ['Cache-Control' => 'private, max-age=86400']
         );
     }
 }

@@ -10,15 +10,19 @@ use App\Models\Vehicle;
 use App\Models\VehicleBooking;
 use App\Models\VehicleBookingApproval;
 use App\Permissions\ApprovalStage;
+use App\Signatures\SignatureStorage;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ProvidesUserSignature;
 use Tests\TestCase;
 
 class VehicleBookingWorkflowTest extends TestCase
 {
+    use ProvidesUserSignature;
     use RefreshDatabase;
 
     private Office $officeA;
@@ -59,6 +63,12 @@ class VehicleBookingWorkflowTest extends TestCase
 
         $this->users['faculty-b'] = $this->userFor(Role::FACULTY_STAFF, $this->officeB, 'faculty-b');
         $this->users['dean-b'] = $this->userFor(Role::DEAN_OFFICE_HEAD, $this->officeB, 'dean-b');
+
+        Storage::fake(SignatureStorage::USER_DISK);
+        Storage::fake(SignatureStorage::APPROVAL_DISK);
+        foreach ($this->users as $user) {
+            $this->giveSignature($user);
+        }
     }
 
     #[DataProvider('unauthorizedApproversProvider')]
@@ -66,13 +76,18 @@ class VehicleBookingWorkflowTest extends TestCase
     {
         $booking = $this->makeBooking($this->users[Role::FACULTY_STAFF]);
 
-        $this->asRole($slug)
+        $response = $this->asRole($slug)
             ->putJson('/api/vehicle-bookings/updateStatus/' . $booking->vehicle_booking_id, [
                 'status' => 'approved',
                 'approval_stage' => ApprovalStage::SUPER_ADMIN,
                 'approved_by_user_id' => $this->users[Role::SUPER_ADMIN]->user_id,
-            ])
-            ->assertForbidden();
+            ]);
+
+        if (in_array($slug, [Role::EVENT_ADMIN, Role::STUDENT_REPUBLIC], true)) {
+            $response->assertNotFound();
+        } else {
+            $response->assertForbidden();
+        }
 
         $this->assertSame('pending', $booking->fresh()->status);
         $this->assertSame(ApprovalStage::OFFICE_HEAD, $booking->fresh()->approval_stage);
@@ -84,8 +99,8 @@ class VehicleBookingWorkflowTest extends TestCase
             'super-admin' => [Role::SUPER_ADMIN],
             'event-admin' => [Role::EVENT_ADMIN],
             'vehicle-admin' => [Role::VEHICLE_ADMIN],
-            'event-approval-admin' => [Role::EVENT_APPROVAL_ADMIN],
-            'vehicle-approval-admin' => [Role::VEHICLE_APPROVAL_ADMIN],
+            'admin-approvals' => [Role::ADMIN_APPROVALS],
+            'oic-budget' => [Role::OIC_BUDGET],
             'faculty-staff' => [Role::FACULTY_STAFF],
             'student-republic' => [Role::STUDENT_REPUBLIC],
         ];
@@ -107,7 +122,7 @@ class VehicleBookingWorkflowTest extends TestCase
             ->putJson('/api/vehicle-bookings/updateStatus/' . $booking->vehicle_booking_id, [
                 'status' => 'approved',
             ])
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_faculty_submit_ignores_spoofed_requester_and_stage(): void
@@ -128,8 +143,8 @@ class VehicleBookingWorkflowTest extends TestCase
         $this->assertSame($this->officeA->office_id, $created['office_id']);
         $this->assertSame('pending', $created['status']);
         $this->assertSame(ApprovalStage::OFFICE_HEAD, $created['approval_stage']);
-        $this->assertNull($created['vehicle_id']);
-        $this->assertNull($created['driver_id']);
+        $this->assertSame($this->vehicle->vehicle_id, $created['vehicle_id']);
+        $this->assertSame($this->driver->driver_id, $created['driver_id']);
     }
 
     public function test_sequential_approval_requires_assignment_before_final_approve(): void
@@ -144,13 +159,6 @@ class VehicleBookingWorkflowTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.approval_stage', ApprovalStage::VEHICLE_APPROVAL);
-
-        $this->asRole(Role::VEHICLE_APPROVAL_ADMIN)
-            ->putJson('/api/vehicle-bookings/updateStatus/' . $booking->vehicle_booking_id, [
-                'status' => 'approved',
-            ])
-            ->assertOk()
             ->assertJsonPath('data.approval_stage', ApprovalStage::VEHICLE_ADMIN);
 
         $this->asRole(Role::VEHICLE_ADMIN)
@@ -174,6 +182,22 @@ class VehicleBookingWorkflowTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.approval_stage', ApprovalStage::VEHICLE_APPROVAL);
+
+        $this->asRole(Role::ADMIN_APPROVALS)
+            ->putJson('/api/vehicle-bookings/updateStatus/' . $booking->vehicle_booking_id, [
+                'status' => 'approved',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.approval_stage', ApprovalStage::OIC_BUDGET);
+
+        $this->asRole(Role::OIC_BUDGET)
+            ->putJson('/api/vehicle-bookings/updateStatus/' . $booking->vehicle_booking_id, [
+                'status' => 'approved',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'pending')
             ->assertJsonPath('data.approval_stage', ApprovalStage::SUPER_ADMIN);
 
         $this->asRole(Role::SUPER_ADMIN)
@@ -186,7 +210,7 @@ class VehicleBookingWorkflowTest extends TestCase
             ->assertJsonPath('data.approval_stage', ApprovalStage::SUPER_ADMIN);
 
         $history = $booking->fresh()->approvals;
-        $this->assertCount(4, $history);
+        $this->assertCount(5, $history);
         $this->assertEquals(
             ApprovalStage::vehiclePipeline(),
             $history->pluck('approval_stage')->all(),
@@ -200,7 +224,7 @@ class VehicleBookingWorkflowTest extends TestCase
     {
         $booking = $this->makeBooking($this->users[Role::FACULTY_STAFF]);
 
-        $this->asRole(Role::VEHICLE_APPROVAL_ADMIN)
+        $this->asRole(Role::ADMIN_APPROVALS)
             ->putJson('/api/vehicle-bookings/updateStatus/' . $booking->vehicle_booking_id, [
                 'status' => 'approved',
             ])
@@ -255,7 +279,7 @@ class VehicleBookingWorkflowTest extends TestCase
             ->putJson('/api/vehicle-bookings/updateStatus/' . $foreign->vehicle_booking_id, [
                 'status' => 'approved',
             ])
-            ->assertForbidden();
+            ->assertNotFound();
 
         $this->flushHeaders();
         $this->app['auth']->forgetGuards();
@@ -265,7 +289,7 @@ class VehicleBookingWorkflowTest extends TestCase
                 'status' => 'approved',
             ])
             ->assertOk()
-            ->assertJsonPath('data.approval_stage', ApprovalStage::VEHICLE_APPROVAL);
+            ->assertJsonPath('data.approval_stage', ApprovalStage::VEHICLE_ADMIN);
     }
 
     public function test_faculty_cannot_view_another_requesters_booking(): void
@@ -296,8 +320,9 @@ class VehicleBookingWorkflowTest extends TestCase
 
             $actor = match ($stage) {
                 ApprovalStage::OFFICE_HEAD => Role::DEAN_OFFICE_HEAD,
-                ApprovalStage::VEHICLE_APPROVAL => Role::VEHICLE_APPROVAL_ADMIN,
+                ApprovalStage::VEHICLE_APPROVAL => Role::ADMIN_APPROVALS,
                 ApprovalStage::VEHICLE_ADMIN => Role::VEHICLE_ADMIN,
+                ApprovalStage::OIC_BUDGET => Role::OIC_BUDGET,
                 default => Role::SUPER_ADMIN,
             };
 
@@ -342,7 +367,7 @@ class VehicleBookingWorkflowTest extends TestCase
                 'status' => 'cancelled',
                 'cancellation_reason' => 'Not mine',
             ])
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_unreviewed_bookings_can_be_edited_but_in_pipeline_bookings_cannot(): void
@@ -463,13 +488,13 @@ class VehicleBookingWorkflowTest extends TestCase
         $allowed = [
             Role::SUPER_ADMIN,
             Role::VEHICLE_ADMIN,
-            Role::VEHICLE_APPROVAL_ADMIN,
+            Role::ADMIN_APPROVALS,
             Role::DEAN_OFFICE_HEAD,
             Role::FACULTY_STAFF,
+            Role::OIC_BUDGET,
         ];
         $denied = [
             Role::EVENT_ADMIN,
-            Role::EVENT_APPROVAL_ADMIN,
             Role::STUDENT_REPUBLIC,
         ];
 
@@ -493,8 +518,8 @@ class VehicleBookingWorkflowTest extends TestCase
         return array_merge([
             'destination' => 'City Hall',
             'purpose' => 'Official errand',
-            'travel_date' => now()->toDateString(),
-            'expected_return_date' => now()->toDateString(),
+            'travel_date' => now()->addDays(2)->toDateString(),
+            'expected_return_date' => now()->addDays(2)->toDateString(),
             'departure_time' => '09:00',
             'expected_return_time' => '10:00',
             'passenger_count' => 4,
@@ -509,8 +534,9 @@ class VehicleBookingWorkflowTest extends TestCase
     {
         $sequence = [
             ApprovalStage::OFFICE_HEAD => Role::DEAN_OFFICE_HEAD,
-            ApprovalStage::VEHICLE_APPROVAL => Role::VEHICLE_APPROVAL_ADMIN,
             ApprovalStage::VEHICLE_ADMIN => Role::VEHICLE_ADMIN,
+            ApprovalStage::VEHICLE_APPROVAL => Role::ADMIN_APPROVALS,
+            ApprovalStage::OIC_BUDGET => Role::OIC_BUDGET,
             ApprovalStage::SUPER_ADMIN => Role::SUPER_ADMIN,
         ];
 
@@ -534,6 +560,29 @@ class VehicleBookingWorkflowTest extends TestCase
                 ])
                 ->assertOk();
         }
+    }
+
+    public function test_vehicle_approval_queue_starts_after_the_unit_head(): void
+    {
+        $waiting = $this->makeBooking($this->users[Role::FACULTY_STAFF]);
+        $advanced = $this->makeBooking($this->users[Role::FACULTY_STAFF]);
+        $advanced->update(['approval_stage' => ApprovalStage::VEHICLE_ADMIN]);
+
+        $ids = $this->asRole(Role::VEHICLE_ADMIN)
+            ->getJson('/api/vehicle-bookings/awaiting-my-approval')
+            ->assertOk()
+            ->json('data.*.vehicle_booking_id');
+
+        $this->assertNotContains($waiting->vehicle_booking_id, $ids);
+        $this->assertContains($advanced->vehicle_booking_id, $ids);
+
+        $deanIds = $this->asRole(Role::DEAN_OFFICE_HEAD)
+            ->getJson('/api/vehicle-bookings/awaiting-my-approval')
+            ->assertOk()
+            ->json('data.*.vehicle_booking_id');
+
+        $this->assertContains($waiting->vehicle_booking_id, $deanIds);
+        $this->assertNotContains($advanced->vehicle_booking_id, $deanIds);
     }
 
     private function asRole(string $slug)

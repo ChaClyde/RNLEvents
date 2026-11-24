@@ -8,6 +8,8 @@ use App\Models\VehicleBookingApproval;
 use App\Permissions\ApprovalStage;
 use App\Permissions\Permission;
 use App\Permissions\PermissionContext;
+use App\Notifications\SystemNotifier;
+use App\Signatures\SignatureStorage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -52,19 +54,27 @@ class VehicleApprovalWorkflow
         $this->assertKnownStage($booking);
         $this->assertCanDecide($actor, $booking);
         $this->assertStageNotDecided($booking);
+        $this->assertCalculationConfirmed($booking);
         $this->assignments->assertReadyForAdvancement($actor, $booking);
 
         $remarks = $this->nullableText($input['approval_remarks'] ?? null);
         $stage = $booking->approval_stage;
         $nextStage = ApprovalStage::nextVehicleStage($stage);
+        $snapshot = SignatureStorage::copyForApproval($actor);
 
-        $this->recordDecision(
-            $booking,
-            $actor,
-            $stage,
-            VehicleBookingApproval::ACTION_APPROVED,
-            $remarks,
-        );
+        try {
+            $this->recordDecision(
+                $booking,
+                $actor,
+                $stage,
+                VehicleBookingApproval::ACTION_APPROVED,
+                $remarks,
+                $snapshot,
+            );
+        } catch (\Throwable $exception) {
+            SignatureStorage::deleteApprovalFile($snapshot['signature_path']);
+            throw $exception;
+        }
 
         if ($nextStage === null || ApprovalStage::isFinalVehicleStage($stage)) {
             $booking->update([
@@ -72,6 +82,8 @@ class VehicleApprovalWorkflow
                 'approval_stage' => $stage,
                 'approval_remarks' => $remarks ?? $booking->approval_remarks,
             ]);
+
+            app(SystemNotifier::class)->bookingDecided($booking, $actor);
 
             return $booking;
         }
@@ -81,6 +93,8 @@ class VehicleApprovalWorkflow
             'approval_stage' => $nextStage,
             'approval_remarks' => $remarks ?? $booking->approval_remarks,
         ]);
+
+        app(SystemNotifier::class)->bookingDecided($booking, $actor);
 
         return $booking;
     }
@@ -101,18 +115,28 @@ class VehicleApprovalWorkflow
             'A rejection remark is required.',
         );
 
-        $this->recordDecision(
-            $booking,
-            $actor,
-            $booking->approval_stage,
-            VehicleBookingApproval::ACTION_REJECTED,
-            $remarks,
-        );
+        $snapshot = SignatureStorage::copyForApproval($actor);
+
+        try {
+            $this->recordDecision(
+                $booking,
+                $actor,
+                $booking->approval_stage,
+                VehicleBookingApproval::ACTION_REJECTED,
+                $remarks,
+                $snapshot,
+            );
+        } catch (\Throwable $exception) {
+            SignatureStorage::deleteApprovalFile($snapshot['signature_path']);
+            throw $exception;
+        }
 
         $booking->update([
             'status' => 'rejected',
             'approval_remarks' => $remarks,
         ]);
+
+        app(SystemNotifier::class)->bookingDecided($booking, $actor);
 
         return $booking;
     }
@@ -145,6 +169,8 @@ class VehicleApprovalWorkflow
             'cancellation_reason' => $reason,
         ]);
 
+        app(SystemNotifier::class)->bookingDecided($booking, $actor);
+
         return $booking;
     }
 
@@ -164,6 +190,23 @@ class VehicleApprovalWorkflow
         if (!ApprovalStage::isVehicleStage((string) $booking->approval_stage)) {
             throw ValidationException::withMessages([
                 'approval_stage' => ['This booking is not in a valid vehicle approval stage.'],
+            ]);
+        }
+    }
+
+    private function assertCalculationConfirmed(VehicleBooking $booking): void
+    {
+        if (!in_array($booking->approval_stage, [ApprovalStage::VEHICLE_ADMIN, ApprovalStage::VEHICLE_APPROVAL], true)) {
+            return;
+        }
+
+        if ($booking->charge_lines === null) {
+            return;
+        }
+
+        if ($booking->calculation_confirmed_stage !== $booking->approval_stage) {
+            throw ValidationException::withMessages([
+                'fee' => ['Confirm the vehicle charge breakdown before approving.'],
             ]);
         }
     }
@@ -244,6 +287,7 @@ class VehicleApprovalWorkflow
         string $stage,
         string $action,
         ?string $remarks,
+        array $snapshot,
     ): void {
         VehicleBookingApproval::create([
             'vehicle_booking_id' => $booking->vehicle_booking_id,
@@ -251,6 +295,10 @@ class VehicleApprovalWorkflow
             'approval_stage' => $stage,
             'action' => $action,
             'remarks' => $remarks,
+            'signature_path' => $snapshot['signature_path'],
+            'signature_mime' => $snapshot['signature_mime'],
+            'signer_name' => $snapshot['signer_name'],
+            'signer_position' => $snapshot['signer_position'],
         ]);
     }
 

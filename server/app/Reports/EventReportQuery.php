@@ -63,6 +63,7 @@ class EventReportQuery
             'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
             'sort' => ['nullable', 'in:'.implode(',', self::SORTABLE)],
             'direction' => ['nullable', 'in:asc,desc'],
+            'report' => ['nullable', 'in:daily,weekly,monthly'],
         ]);
     }
 

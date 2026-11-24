@@ -17,8 +17,8 @@ final class PermissionCatalog
             Role::SUPER_ADMIN => self::superAdmin(),
             Role::EVENT_ADMIN => self::eventAdmin(),
             Role::VEHICLE_ADMIN => self::vehicleAdmin(),
-            Role::EVENT_APPROVAL_ADMIN => self::eventApprovalAdmin(),
-            Role::VEHICLE_APPROVAL_ADMIN => self::vehicleApprovalAdmin(),
+            Role::ADMIN_APPROVALS => self::adminApprovals(),
+            Role::OIC_BUDGET => self::oicBudget(),
             Role::DEAN_OFFICE_HEAD => self::deanOfficeHead(),
             Role::FACULTY_STAFF => self::facultyStaff(),
             Role::STUDENT_REPUBLIC => self::studentRepublic(),
@@ -68,6 +68,7 @@ final class PermissionCatalog
             'vehicle_management' => [
                 Permission::VEHICLES_VIEW,
                 Permission::DRIVERS_VIEW,
+                Permission::VEHICLE_BOOKINGS_VIEW,
             ],
             'booking_management' => [
                 Permission::EVENT_BOOKINGS_VIEW,
@@ -98,6 +99,7 @@ final class PermissionCatalog
             self::crud(Permission::MODULE_ROLES),
             self::crud(Permission::MODULE_OFFICES),
             self::crud(Permission::MODULE_VENUES),
+            self::crud(Permission::MODULE_VENUE_RATES),
             self::crud(Permission::MODULE_EVENTS),
             self::crud(Permission::MODULE_VEHICLES),
             self::crud(Permission::MODULE_DRIVERS),
@@ -106,6 +108,7 @@ final class PermissionCatalog
                 Permission::EVENT_BOOKINGS_VIEW => AbilityRule::global(),
                 Permission::EVENT_BOOKINGS_EDIT => AbilityRule::global(),
                 Permission::EVENT_BOOKINGS_DELETE => AbilityRule::global(),
+                Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE => AbilityRule::global(),
                 Permission::EVENT_BOOKINGS_CREATE => AbilityRule::global([
                     'requires_emergency_bypass' => true,
                 ]),
@@ -150,10 +153,12 @@ final class PermissionCatalog
     {
         return array_merge(
             self::crud(Permission::MODULE_VENUES),
+            self::crud(Permission::MODULE_VENUE_RATES),
             self::crud(Permission::MODULE_EVENTS),
             [
                 Permission::DASHBOARD_VIEW => AbilityRule::global(),
                 Permission::EVENT_BOOKINGS_VIEW => AbilityRule::global(),
+                Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE => AbilityRule::global(),
                 Permission::EVENT_APPROVALS_VIEW => AbilityRule::global(),
                 Permission::EVENT_APPROVALS_APPROVE => AbilityRule::global([
                     'approval_pipeline' => ApprovalStage::PIPELINE_EVENT,
@@ -192,26 +197,34 @@ final class PermissionCatalog
     /**
      * @return array<string, AbilityRule>
      */
-    private static function eventApprovalAdmin(): array
+    private static function adminApprovals(): array
     {
         return [
             Permission::DASHBOARD_VIEW => AbilityRule::global(),
+            Permission::EVENTS_VIEW => AbilityRule::global(),
             Permission::EVENT_BOOKINGS_VIEW => AbilityRule::global(),
             Permission::EVENT_APPROVALS_VIEW => AbilityRule::global(),
             Permission::EVENT_APPROVALS_APPROVE => AbilityRule::global([
                 'approval_pipeline' => ApprovalStage::PIPELINE_EVENT,
                 'approval_stages' => [ApprovalStage::EVENT_APPROVAL],
             ]),
+            Permission::VEHICLE_BOOKINGS_VIEW => AbilityRule::global(),
+            Permission::VEHICLE_APPROVALS_VIEW => AbilityRule::global(),
+            Permission::VEHICLE_APPROVALS_APPROVE => AbilityRule::global([
+                'approval_pipeline' => ApprovalStage::PIPELINE_VEHICLE,
+                'approval_stages' => [ApprovalStage::VEHICLE_APPROVAL],
+            ]),
             Permission::MESSENGER_VIEW => AbilityRule::global(),
             Permission::REPORTS_VIEW => AbilityRule::global(['limited' => true]),
             Permission::REPORTS_VIEW_EVENT => AbilityRule::global(['limited' => true]),
+            Permission::REPORTS_VIEW_VEHICLE => AbilityRule::global(['limited' => true]),
         ];
     }
 
     /**
      * @return array<string, AbilityRule>
      */
-    private static function vehicleApprovalAdmin(): array
+    private static function oicBudget(): array
     {
         return [
             Permission::DASHBOARD_VIEW => AbilityRule::global(),
@@ -219,7 +232,7 @@ final class PermissionCatalog
             Permission::VEHICLE_APPROVALS_VIEW => AbilityRule::global(),
             Permission::VEHICLE_APPROVALS_APPROVE => AbilityRule::global([
                 'approval_pipeline' => ApprovalStage::PIPELINE_VEHICLE,
-                'approval_stages' => [ApprovalStage::VEHICLE_APPROVAL],
+                'approval_stages' => [ApprovalStage::OIC_BUDGET],
             ]),
             Permission::MESSENGER_VIEW => AbilityRule::global(),
             Permission::REPORTS_VIEW => AbilityRule::global(['limited' => true]),
@@ -236,6 +249,7 @@ final class PermissionCatalog
             self::crud(Permission::MODULE_USERS, AbilityRule::SCOPE_OFFICE),
             [
                 Permission::DASHBOARD_VIEW => AbilityRule::global(),
+                Permission::EVENTS_VIEW => AbilityRule::office(),
                 Permission::EVENT_BOOKINGS_VIEW => AbilityRule::office(['optional' => true]),
                 Permission::EVENT_BOOKINGS_CREATE => AbilityRule::office(['optional' => true]),
                 Permission::EVENT_BOOKINGS_EDIT => AbilityRule::office(['optional' => true]),
@@ -268,6 +282,7 @@ final class PermissionCatalog
     {
         return [
             Permission::DASHBOARD_VIEW => AbilityRule::global(),
+            Permission::EVENTS_VIEW => AbilityRule::own(),
             Permission::EVENT_BOOKINGS_VIEW => AbilityRule::own(),
             Permission::EVENT_BOOKINGS_CREATE => AbilityRule::global(),
             Permission::EVENT_BOOKINGS_EDIT => AbilityRule::own(),
@@ -289,6 +304,7 @@ final class PermissionCatalog
     {
         return [
             Permission::DASHBOARD_VIEW => AbilityRule::global(),
+            Permission::EVENTS_VIEW => AbilityRule::own(),
             Permission::EVENT_BOOKINGS_VIEW => AbilityRule::own(),
             Permission::EVENT_BOOKINGS_CREATE => AbilityRule::global(),
             Permission::EVENT_BOOKINGS_EDIT => AbilityRule::own(),

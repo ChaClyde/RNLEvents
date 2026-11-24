@@ -88,19 +88,16 @@ class VehicleReportService
         ];
 
         if ($canViewFleet) {
-            $fleetCounts = Vehicle::query()
-                ->where('is_deleted', false)
-                ->selectRaw('status, COUNT(*) as aggregate')
-                ->groupBy('status')
-                ->pluck('aggregate', 'status')
-                ->map(fn ($count) => (int) $count);
+            $activeFleet = Vehicle::query()->where('is_deleted', false);
 
+            // As of today: available + unavailable + maintenance = total
             $fleet = [
-                'available' => $fleetCounts['available'] ?? 0,
-                'unavailable' => $fleetCounts['unavailable'] ?? 0,
-                'maintenance' => $fleetCounts['maintenance'] ?? 0,
-                'total' => $fleetCounts->sum(),
+                'available' => (clone $activeFleet)->availableToday()->count(),
+                'unavailable' => (clone $activeFleet)->where('status', 'unavailable')->count(),
+                'maintenance' => (clone $activeFleet)->underMaintenanceToday()->count(),
             ];
+
+            $fleet['total'] = $fleet['available'] + $fleet['unavailable'] + $fleet['maintenance'];
         }
 
         return [
@@ -234,6 +231,7 @@ class VehicleReportService
                 SUM(CASE WHEN tbl_vehicle_bookings.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
             ")
             ->groupBy('tbl_vehicle_bookings.office_id', 'tbl_offices.office_name')
+            ->orderByRaw('total DESC')
             ->orderBy('office_name')
             ->get();
 
@@ -306,11 +304,43 @@ class VehicleReportService
         $offices = $this->offices($user, $filters);
         $rows = $this->allBookingRows($user, $filters);
 
+        $titles = [
+            'daily' => ['Daily Vehicle Report', 'Summary of daily vehicle bookings and trips'],
+            'weekly' => ['Weekly Vehicle Report', 'Summary of weekly vehicle usage and bookings'],
+            'monthly' => ['Monthly Vehicle Report', 'Overview of monthly vehicle utilization'],
+            'driver' => ['Driver Report', 'Record of driver assignments and trips'],
+            'usage' => ['Vehicle Usage Report', 'Vehicle usage and availability'],
+        ];
+        $selected = $titles[$filters['report'] ?? ''] ?? ['FilSched Vehicle Report', 'Vehicle Booking, Utilization, Driver, and Office-Based Reports'];
+        $topOffice = $offices[0] ?? null;
+        $topVehicle = $utilization['most_frequent'][0] ?? null;
+        $topDriver = $drivers['assignments'][0] ?? null;
+
         return [
             'module' => 'vehicles',
-            'title' => 'FilSched Vehicle Report',
+            'title' => $selected[0],
             'organization' => 'Filamer Christian University Inc.',
-            'report_type' => 'Vehicle Booking, Utilization, Driver, and Office-Based Reports',
+            'report_type' => $selected[1],
+            'highlights' => [
+                [
+                    'label' => 'Department with the most trips',
+                    'value' => $topOffice
+                        ? $topOffice['office_name'].' ('.$topOffice['total'].')'
+                        : 'None in this period',
+                ],
+                [
+                    'label' => 'Most frequently used vehicle',
+                    'value' => $topVehicle
+                        ? $topVehicle['label'].' ('.$topVehicle['value'].')'
+                        : 'None in this period',
+                ],
+                [
+                    'label' => 'Most frequently booked driver',
+                    'value' => $topDriver
+                        ? $topDriver['label'].' ('.$topDriver['value'].')'
+                        : 'None in this period',
+                ],
+            ],
             'generated_at' => now()->format('Y-m-d H:i'),
             'date_range' => ReportExportSupport::dateRangeLabel($filters),
             'filters' => $this->describeFilters($user, $filters),
@@ -509,6 +539,7 @@ class VehicleReportService
         $vehicles = [];
         if ($user->allows(Permission::VEHICLES_VIEW)) {
             $vehicles = Vehicle::query()
+                ->with('upcomingMaintenance')
                 ->where('is_deleted', false)
                 ->orderBy('vehicle_name')
                 ->get(['vehicle_id', 'vehicle_name', 'plate_number', 'status'])
@@ -517,6 +548,7 @@ class VehicleReportService
                     'vehicle_name' => $vehicle->vehicle_name,
                     'plate_number' => $vehicle->plate_number,
                     'status' => $vehicle->status,
+                    'availability_status' => $vehicle->availability_status,
                 ])
                 ->all();
         }
@@ -620,7 +652,16 @@ class VehicleReportService
 
         $list = $filters['list'] ?? '';
 
+        $reportNames = [
+            'daily' => 'Daily report',
+            'weekly' => 'Weekly report',
+            'monthly' => 'Monthly report',
+            'driver' => 'Driver report',
+            'usage' => 'Vehicle usage report',
+        ];
+
         return [
+            ['label' => 'Report', 'value' => $reportNames[$filters['report'] ?? ''] ?? 'Vehicle report'],
             ['label' => 'Date range', 'value' => ReportExportSupport::dateRangeLabel($filters)],
             ['label' => 'Status', 'value' => !empty($filters['status']) ? ucfirst((string) $filters['status']) : 'All statuses'],
             ['label' => 'Office', 'value' => $officeName],

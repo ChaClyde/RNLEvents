@@ -62,14 +62,14 @@ class RoleSeeder extends Seeder
                 'description' => 'Manages vehicles and drivers. Approves the vehicle-admin step. Cannot create bookings.',
             ],
             [
-                'name' => 'Event Approval Admin',
-                'slug' => Role::EVENT_APPROVAL_ADMIN,
-                'description' => 'Approves assigned event-approval stages. Does not manage records or create bookings.',
+                'name' => 'Admin Approvals',
+                'slug' => Role::ADMIN_APPROVALS,
+                'description' => 'Approves the Admin Approvals step for event bookings and vehicle bookings. Cannot create bookings.',
             ],
             [
-                'name' => 'Vehicle Approval Admin',
-                'slug' => Role::VEHICLE_APPROVAL_ADMIN,
-                'description' => 'Approves assigned vehicle-approval stages. Does not manage records or create bookings.',
+                'name' => 'OIC, Accounting/Budget Office',
+                'slug' => Role::OIC_BUDGET,
+                'description' => 'Confirms availability of funds after Admin Approvals on a vehicle booking.',
             ],
             [
                 'name' => 'Dean / Office Head',

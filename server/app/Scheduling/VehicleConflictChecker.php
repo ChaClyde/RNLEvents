@@ -60,8 +60,20 @@ class VehicleConflictChecker
 
         if ((int) $booking->passenger_count > (int) $vehicle->capacity) {
             throw ValidationException::withMessages([
-                'passenger_count' => [
-                    "This vehicle's capacity is {$vehicle->capacity} passengers.",
+                'vehicle_id' => ["This vehicle's capacity is {$vehicle->capacity} passengers."],
+            ]);
+        }
+
+        // Scheduled maintenance (from the maintenance sheet) on any day of the trip
+        $maintenance = $vehicle->maintenanceBetween(
+            $booking->tripStartsAt()->toDateString(),
+            $booking->tripEndsAt()->toDateString(),
+        );
+
+        if ($maintenance) {
+            throw ValidationException::withMessages([
+                'vehicle_id' => [
+                    "{$vehicle->vehicle_name} is under scheduled maintenance ({$maintenance->reason}) {$maintenance->range_label} and cannot be assigned.",
                 ],
             ]);
         }

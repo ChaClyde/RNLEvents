@@ -7,14 +7,24 @@ use App\Http\Controllers\Controller;
 use App\EventBookings\EventApprovalWorkflow;
 use App\Models\EventBooking;
 use App\Models\EventBookingSchedule;
+use App\Models\Role;
 use App\Models\User;
 use App\Models\Venue;
+use App\Models\VenueMaintenance;
 use App\Permissions\AbilityRule;
+use App\Permissions\ApprovalStage;
 use App\Permissions\Permission;
 use App\Permissions\PermissionCatalog;
+use App\Permissions\PermissionChecker;
+use App\Scheduling\AdvanceBookingPolicy;
+use App\Scheduling\BookingHoursPolicy;
 use App\Scheduling\BookingScheduleBuilder;
+use App\Venues\VenueFeeCalculator;
+use App\Venues\VenueFeeRecorder;
+use App\Scheduling\GymUsagePolicy;
 use App\Scheduling\TimeFormat;
 use App\Scheduling\VenueConflictChecker;
+use App\Signatures\SignatureStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -26,7 +36,7 @@ class EventBookingController extends Controller
 
     private function bookingRelations(): array
     {
-        return ['venue', 'office', 'resources', 'schedules', 'requester', 'approvals.approver'];
+        return ['venue', 'office', 'resources', 'schedules', 'requester', 'approvals.approver', 'attachments', 'feeSnapshot.lines', 'universityWideDesignator:user_id,first_name,last_name'];
     }
 
     /*
@@ -44,6 +54,9 @@ class EventBookingController extends Controller
             'schedules',
             'requester',
             'approvals.approver',
+            'attachments',
+            'feeSnapshot.lines',
+            'universityWideDesignator:user_id,first_name,last_name',
         ])->where('is_deleted', false);
 
         $query = $this->constrainByPermission(
@@ -105,6 +118,41 @@ class EventBookingController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | Load Requests Awaiting the Logged-in Approver ("My Event Requests")
+    |--------------------------------------------------------------------------
+    */
+
+    public function loadAwaitingMyApproval(Request $request)
+    {
+        $user = $request->user();
+        $user->loadMissing('role');
+
+        $stages = PermissionCatalog::ruleFor(
+            $user->role?->slug,
+            Permission::EVENT_APPROVALS_APPROVE
+        )?->approvalStages ?? [];
+
+        $query = EventBooking::with($this->bookingRelations())
+            ->where('is_deleted', false)
+            ->where('status', 'pending')
+            ->whereIn('approval_stage', $stages)
+            ->where(function ($q) use ($user) {
+                $q->whereNull('requested_by_user_id')
+                    ->orWhere('requested_by_user_id', '!=', $user->user_id);
+            });
+
+        // Applies the dean's office scope.
+        $query = app(PermissionChecker::class)
+            ->constrainQuery($query, $user, Permission::EVENT_APPROVALS_APPROVE);
+
+        return response()->json([
+            'message' => 'Requests awaiting your approval loaded successfully.',
+            'data' => $query->orderBy('created_at')->get(),
+        ], 200);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Get Event Booking
     |--------------------------------------------------------------------------
     */
@@ -146,9 +194,12 @@ class EventBookingController extends Controller
         $exclude = $validated['exclude_event_booking_id'] ?? null;
 
         $conflicts = $checker->detect($validated['venue_id'], $occurrences, $exclude);
+        $venue = Venue::query()->where('is_deleted', false)->findOrFail($validated['venue_id']);
+        $gym = $this->gymAvailability($request, $venue, $occurrences);
+        $restrictions = $this->scheduleRestrictions($venue, $occurrences, $gym['restrictions']);
 
         return response()->json([
-            'available' => empty($conflicts),
+            'available' => empty($conflicts) && $restrictions === [],
             'occurrences' => array_map(fn ($o) => $o + [
                 'time_start_label' => TimeFormat::label($o['time_start']),
                 'time_end_label' => TimeFormat::label($o['time_end']),
@@ -157,7 +208,48 @@ class EventBookingController extends Controller
             'suggestions' => $conflicts
                 ? $checker->suggest($validated['venue_id'], $occurrences, $conflicts, $exclude)
                 : [],
+            'schedule_restrictions' => $restrictions,
+            'gym_reservation_warning' => $gym['warning'],
         ], 200);
+    }
+
+    public function previewFee(Request $request)
+    {
+        $this->normalizeTimes($request);
+
+        $validated = $request->validate(array_merge(
+            $this->scheduleRules(),
+            $this->feeInputRules(),
+            [
+                'venue_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists('tbl_venues', 'venue_id')
+                        ->where(fn ($query) => $query->where('is_deleted', false)),
+                ],
+                'resources' => ['nullable', 'array'],
+                'resources.*.resource_id' => ['nullable', 'integer'],
+                'resources.*.quantity' => ['nullable', 'integer', 'min:1'],
+            ]
+        ), $this->scheduleMessages());
+
+        $venue = Venue::where('venue_id', $validated['venue_id'])
+            ->where('is_deleted', false)
+            ->firstOrFail();
+
+        $this->assertVenueBookable($venue, $validated + ['expected_attendees' => 0]);
+
+        $occurrences = app(BookingScheduleBuilder::class)->build($validated);
+        $this->assertBookingHours($venue, $occurrences);
+        $this->assertMaintenanceClear($venue->venue_id, $occurrences);
+
+        return response()->json([
+            'data' => app(VenueFeeCalculator::class)->quote(
+                $venue->venue_id,
+                $occurrences,
+                $validated['resources'] ?? []
+            ),
+        ]);
     }
 
     /*
@@ -171,7 +263,7 @@ class EventBookingController extends Controller
         $validated = $this->validateBooking($request);
         $occurrences = app(BookingScheduleBuilder::class)->build($validated);
 
-        $eventBooking = DB::transaction(function () use ($request, $validated, $occurrences) {
+        [$eventBooking, $warning] = DB::transaction(function () use ($request, $validated, $occurrences) {
 
             // Lock the venue row so two requests cannot book the same slot
             $venue = Venue::where('venue_id', $validated['venue_id'])
@@ -183,27 +275,39 @@ class EventBookingController extends Controller
 
             $this->assertVenueBookable($venue, $validated);
             $this->assertResourcesBookable($venue, $resources);
+            $this->assertBookingHours($venue, $occurrences);
+            $this->assertMaintenanceClear($venue->venue_id, $occurrences);
+            $gym = $this->gymBookingFields($request, $venue, $validated, $occurrences);
+            $this->assertCanSubmitBooking($request, $venue, $validated);
 
             app(VenueConflictChecker::class)->assertAvailable(
                 $venue->venue_id,
                 $occurrences
             );
 
-            $data = $this->prepareBookingData($validated, $request, true, $occurrences);
+            $data = array_merge(
+                $this->prepareBookingData($validated, $request, true, $occurrences),
+                $gym['fields']
+            );
 
             $data['status'] = 'pending';
-            $data['approval_stage'] = 'office_head';
+            $data['approval_stage'] = ApprovalStage::OFFICE_HEAD;
 
             $eventBooking = EventBooking::create($data);
 
             $this->syncSchedules($eventBooking, $occurrences);
             $this->syncResources($eventBooking, $venue, $resources);
+            app(VenueFeeRecorder::class)->store($eventBooking, $occurrences, $resources);
+            $this->attachRequesterSignature($eventBooking, $request->user());
 
-            return $eventBooking;
+            return [$eventBooking, $gym['warning']];
         });
+
+        app(\App\Notifications\SystemNotifier::class)->bookingSubmitted($eventBooking, $request->user());
 
         return response()->json([
             'message' => 'Event booking request submitted successfully.',
+            'gym_reservation_warning' => $warning,
             'data' => $eventBooking->load($this->bookingRelations()),
         ], 201);
     }
@@ -219,7 +323,7 @@ class EventBookingController extends Controller
         $validated = $this->validateBooking($request);
         $occurrences = app(BookingScheduleBuilder::class)->build($validated);
 
-        $eventBooking = DB::transaction(function () use ($request, $validated, $occurrences, $event_booking_id) {
+        [$eventBooking, $warning] = DB::transaction(function () use ($request, $validated, $occurrences, $event_booking_id) {
 
             $venue = Venue::where('venue_id', $validated['venue_id'])
                 ->where('is_deleted', false)
@@ -240,6 +344,9 @@ class EventBookingController extends Controller
 
             $this->assertVenueBookable($venue, $validated);
             $this->assertResourcesBookable($venue, $resources);
+            $this->assertBookingHours($venue, $occurrences);
+            $this->assertMaintenanceClear($venue->venue_id, $occurrences);
+            $gym = $this->gymBookingFields($request, $venue, $validated, $occurrences);
 
             // Exclude the current booking from the conflict check
             app(VenueConflictChecker::class)->assertAvailable(
@@ -248,19 +355,23 @@ class EventBookingController extends Controller
                 $eventBooking->event_booking_id
             );
 
-            $eventBooking->update(
-                $this->prepareBookingData($validated, $request, false, $occurrences)
-            );
+            $eventBooking->update(array_merge(
+                $this->prepareBookingData($validated, $request, false, $occurrences),
+                $gym['fields']
+            ));
 
             // The submitted lists replace the previous ones
             $this->syncSchedules($eventBooking, $occurrences);
             $this->syncResources($eventBooking, $venue, $resources);
+            app(VenueFeeRecorder::class)->store($eventBooking, $occurrences, $resources);
+            $this->attachRequesterSignature($eventBooking, $request->user());
 
-            return $eventBooking;
+            return [$eventBooking, $gym['warning']];
         });
 
         return response()->json([
             'message' => 'Event booking updated successfully.',
+            'gym_reservation_warning' => $warning,
             'data' => $eventBooking->fresh()->load($this->bookingRelations()),
         ], 200);
     }
@@ -366,6 +477,50 @@ class EventBookingController extends Controller
     |--------------------------------------------------------------------------
     */
 
+    public function updateFeeCalculation(Request $request, $event_booking_id)
+    {
+        $actor = $request->user();
+        $actor->loadMissing('role');
+
+        abort_unless($actor->role?->slug === Role::ADMIN_APPROVALS, 403, 'This action is unauthorized.');
+
+        $validated = $request->validate([
+            'confirm' => ['required', 'boolean'],
+            'lines' => ['present', 'array'],
+            'lines.*.event_booking_fee_line_id' => ['required', 'integer'],
+            'lines.*.quantity' => ['required', 'numeric', 'min:0', 'max:100000'],
+            'lines.*.unit_amount' => ['required', 'numeric', 'min:0', 'max:1000000'],
+        ]);
+
+        $eventBooking = DB::transaction(function () use ($actor, $validated, $event_booking_id) {
+            $eventBooking = EventBooking::where('is_deleted', false)
+                ->lockForUpdate()
+                ->findOrFail($event_booking_id);
+
+            if ($eventBooking->status !== 'pending' || $eventBooking->approval_stage !== ApprovalStage::EVENT_APPROVAL) {
+                throw ValidationException::withMessages([
+                    'fee' => ['The venue calculation can be confirmed only while this booking is with the Event Approval Admin.'],
+                ]);
+            }
+
+            app(VenueFeeRecorder::class)->adjust(
+                $eventBooking,
+                $validated['lines'],
+                (bool) $validated['confirm'],
+                $actor,
+            );
+
+            return $eventBooking;
+        });
+
+        return response()->json([
+            'message' => $validated['confirm']
+                ? 'Venue calculation confirmed.'
+                : 'Venue calculation updated.',
+            'data' => $eventBooking->fresh()->load($this->bookingRelations()),
+        ]);
+    }
+
     public function updateEventBookingStatus(Request $request, $event_booking_id)
     {
         $validated = $request->validate([
@@ -393,6 +548,14 @@ class EventBookingController extends Controller
                 ->findOrFail($event_booking_id);
 
             if ($validated['status'] === 'approved') {
+                // Check permission first so an unauthorized user gets 403,
+                // not a venue-conflict message.
+                abort_unless($request->user()->allows(Permission::EVENT_APPROVALS_APPROVE, [
+                    'resource' => $eventBooking,
+                    'approval_pipeline' => ApprovalStage::PIPELINE_EVENT,
+                    'approval_stage' => $eventBooking->approval_stage,
+                ]), 403, 'This action is unauthorized.');
+
                 Venue::where('venue_id', $eventBooking->venue_id)
                     ->lockForUpdate()
                     ->first();
@@ -443,7 +606,7 @@ class EventBookingController extends Controller
     {
         $this->normalizeTimes($request);
 
-        return $request->validate(array_merge($this->scheduleRules(), [
+        return $request->validate(array_merge($this->scheduleRules(), $this->feeInputRules(), [
             'venue_id' => [
                 'required',
                 'integer',
@@ -489,6 +652,10 @@ class EventBookingController extends Controller
 
             'email' => ['required', 'email', 'max:150'],
             'tel_number' => ['required', 'string', 'max:30'],
+
+            'university_wide_activity' => ['nullable', 'boolean'],
+            'reservation_span' => ['nullable', Rule::in(['standard', 'whole_semester', 'whole_summer'])],
+            'gym_responsibilities_acknowledged' => ['nullable', 'boolean'],
         ]), $this->scheduleMessages());
     }
 
@@ -498,13 +665,28 @@ class EventBookingController extends Controller
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function feeInputRules(): array
+    {
+        return [
+            'total_amount' => ['prohibited'],
+            'venue_amount' => ['prohibited'],
+            'overtime_amount' => ['prohibited'],
+            'additional_amount' => ['prohibited'],
+        ];
+    }
+
     private function scheduleRules(): array
     {
+        $earliest = app(AdvanceBookingPolicy::class)->earliestDate();
+
         return [
             // range = every day, weekly = selected weekdays, custom = hand-picked dates
             'schedule_type' => ['required', Rule::in(['range', 'weekly', 'custom'])],
 
-            'date_start' => ['required_unless:schedule_type,custom', 'nullable', 'date', 'after_or_equal:today'],
+            'date_start' => ['required_unless:schedule_type,custom', 'nullable', 'date', 'after_or_equal:'.$earliest],
             'date_end' => ['required_unless:schedule_type,custom', 'nullable', 'date', 'after_or_equal:date_start'],
 
             // weekly: 0 = Sunday ... 6 = Saturday
@@ -522,7 +704,7 @@ class EventBookingController extends Controller
                 'min:1',
                 'max:' . BookingScheduleBuilder::MAX_OCCURRENCES,
             ],
-            'dates.*.date' => ['required', 'date', 'after_or_equal:today'],
+            'dates.*.date' => ['required', 'date', 'after_or_equal:'.$earliest],
             'dates.*.time_start' => ['nullable', 'date_format:H:i'],
             'dates.*.time_end' => ['nullable', 'date_format:H:i'],
 
@@ -546,6 +728,8 @@ class EventBookingController extends Controller
             'time_start.date_format' => $msg,
             'time_end.date_format' => $msg,
             'time_end.after' => 'End time must be after the start time.',
+            'date_start.after_or_equal' => AdvanceBookingPolicy::MESSAGE,
+            'dates.*.date.after_or_equal' => AdvanceBookingPolicy::MESSAGE,
             'dates.*.time_start.date_format' => $msg,
             'dates.*.time_end.date_format' => $msg,
             'overrides.*.time_start.date_format' => $msg,
@@ -587,6 +771,29 @@ class EventBookingController extends Controller
     |--------------------------------------------------------------------------
     */
 
+    private function attachRequesterSignature(EventBooking $booking, User $actor): void
+    {
+        $actor->loadMissing('role');
+
+        if (!in_array($actor->role?->slug, [Role::FACULTY_STAFF, Role::STUDENT_REPUBLIC], true)) {
+            return;
+        }
+
+        $snapshot = SignatureStorage::copyForRequester($actor);
+        $previous = $booking->requester_signature_path;
+
+        $booking->forceFill([
+            'requester_signature_path' => $snapshot['signature_path'],
+            'requester_signature_mime' => $snapshot['signature_mime'],
+            'requester_signer_name' => $snapshot['signer_name'],
+            'requester_signer_position' => $snapshot['signer_position'],
+        ])->save();
+
+        if (is_string($previous) && $previous !== $snapshot['signature_path']) {
+            SignatureStorage::deleteApprovalFile($previous);
+        }
+    }
+
     private function prepareBookingData(
         array $validated,
         Request $request,
@@ -600,6 +807,9 @@ class EventBookingController extends Controller
             $validated['overrides'],
             $validated['dates'],
             $validated['excluded_dates'],
+            $validated['university_wide_activity'],
+            $validated['reservation_span'],
+            $validated['gym_responsibilities_acknowledged'],
         );
 
         // Booking-level summary comes from the real schedule
@@ -650,6 +860,138 @@ class EventBookingController extends Controller
     | Venue Availability and Capacity
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * @param  list<array{date: string, time_start: string, time_end: string}>  $occurrences
+     * @return array{restrictions: list<string>, warning: string|null}
+     */
+    private function gymAvailability(Request $request, Venue $venue, array $occurrences): array
+    {
+        $policy = app(GymUsagePolicy::class);
+
+        if (!$policy->appliesTo($venue)) {
+            return ['restrictions' => [], 'warning' => null];
+        }
+
+        $authorized = $request->boolean('university_wide_activity')
+            && $request->user()?->allows(Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE);
+
+        return [
+            'restrictions' => $authorized ? [] : $policy->violations($occurrences),
+            'warning' => $policy->reservationWarning($request->input('reservation_span')),
+        ];
+    }
+
+    private function emergencyBypassRequested(Request $request): bool
+    {
+        $header = strtolower((string) $request->header('X-Emergency-Bypass', ''));
+
+        if (in_array($header, ['1', 'true', 'yes'], true)) {
+            return true;
+        }
+
+        return filter_var($request->input('emergency_bypass'), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function assertCanSubmitBooking(Request $request, Venue $venue, array $validated): void
+    {
+        $actor = $request->user();
+        $canCreate = $actor->allows(Permission::EVENT_BOOKINGS_CREATE);
+
+        if (!$canCreate && $this->emergencyBypassRequested($request)) {
+            $canCreate = $actor->allowsWithEmergencyBypass(Permission::EVENT_BOOKINGS_CREATE);
+        }
+
+        if ($canCreate) {
+            return;
+        }
+
+        $designated = (bool) ($validated['university_wide_activity'] ?? false)
+            && $actor->allows(Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE)
+            && app(GymUsagePolicy::class)->appliesTo($venue);
+
+        if (!$designated) {
+            abort(403, 'You are not allowed to submit this booking.');
+        }
+    }
+
+    /**
+     * @param  list<array{date: string, time_start: string, time_end: string}>  $occurrences
+     * @return array{fields: array<string, mixed>, warning: string|null}
+     */
+    private function gymBookingFields(Request $request, Venue $venue, array $validated, array $occurrences): array
+    {
+        $policy = app(GymUsagePolicy::class);
+        $empty = [
+            'university_wide_activity' => false,
+            'university_wide_designated_by' => null,
+            'university_wide_designated_at' => null,
+            'reservation_span' => null,
+            'gym_responsibilities_acknowledged' => false,
+            'gym_responsibilities_acknowledged_at' => null,
+            'gym_responsibilities_acknowledged_by' => null,
+            'gym_responsibility_statement' => null,
+        ];
+
+        if (!$policy->appliesTo($venue)) {
+            if (!empty($validated['university_wide_activity'])) {
+                throw ValidationException::withMessages([
+                    'university_wide_activity' => [
+                        'A University-wide activity exception applies only to FCU Gym.',
+                    ],
+                ]);
+            }
+
+            return ['fields' => $empty, 'warning' => null];
+        }
+
+        $actor = $request->user();
+        $designated = (bool) ($validated['university_wide_activity'] ?? false);
+
+        if ($designated && !$actor->allows(Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE)) {
+            throw ValidationException::withMessages([
+                'university_wide_activity' => [
+                    'Only authorized personnel may designate a University-wide activity.',
+                ],
+            ]);
+        }
+
+        if (!$designated) {
+            $violations = $policy->violations($occurrences);
+
+            if ($violations !== []) {
+                throw ValidationException::withMessages([
+                    'time_start' => $violations,
+                ]);
+            }
+        }
+
+        $acknowledged = (bool) ($validated['gym_responsibilities_acknowledged'] ?? false);
+
+        if (!$acknowledged) {
+            throw ValidationException::withMessages([
+                'gym_responsibilities_acknowledged' => [
+                    'Acknowledge the Gym responsibilities before submitting.',
+                ],
+            ]);
+        }
+
+        $span = $validated['reservation_span'] ?? 'standard';
+
+        return [
+            'warning' => $policy->reservationWarning($span),
+            'fields' => [
+                'university_wide_activity' => $designated,
+                'university_wide_designated_by' => $designated ? $actor->user_id : null,
+                'university_wide_designated_at' => $designated ? now() : null,
+                'reservation_span' => in_array($span, ['whole_semester', 'whole_summer'], true) ? $span : null,
+                'gym_responsibilities_acknowledged' => true,
+                'gym_responsibilities_acknowledged_at' => now(),
+                'gym_responsibilities_acknowledged_by' => $actor->user_id,
+                'gym_responsibility_statement' => GymUsagePolicy::RESPONSIBILITY_STATEMENT,
+            ],
+        ];
+    }
 
     private function assertVenueBookable(Venue $venue, array $validated): void
     {
@@ -799,10 +1141,70 @@ class EventBookingController extends Controller
 
     private function assertNoConflict(EventBooking $eventBooking): void
     {
+        $this->assertMaintenanceClear(
+            $eventBooking->venue_id,
+            $eventBooking->occurrences(),
+        );
+
         app(VenueConflictChecker::class)->assertAvailable(
             $eventBooking->venue_id,
             $eventBooking->occurrences(),
             $eventBooking->event_booking_id,
         );
+    }
+
+    /**
+     * @param  list<array{date: string, time_start: string, time_end: string}>  $occurrences
+     * @param  list<string>  $gymRestrictions
+     * @return list<string>
+     */
+    private function scheduleRestrictions(Venue $venue, array $occurrences, array $gymRestrictions): array
+    {
+        $messages = array_merge(
+            $gymRestrictions,
+            app(BookingHoursPolicy::class)->violations($venue, $occurrences),
+        );
+
+        $maintenance = VenueMaintenance::blocking(
+            $venue->venue_id,
+            array_column($occurrences, 'date'),
+        );
+
+        if ($maintenance) {
+            $messages[] = $maintenance->bookingMessage();
+        }
+
+        return array_values($messages);
+    }
+
+    /**
+     * @param  list<array{date: string, time_start: string, time_end: string}>  $occurrences
+     */
+    private function assertBookingHours(Venue $venue, array $occurrences): void
+    {
+        $violations = app(BookingHoursPolicy::class)->violations($venue, $occurrences);
+
+        if ($violations !== []) {
+            throw ValidationException::withMessages([
+                'time_start' => $violations,
+            ]);
+        }
+    }
+
+    /**
+     * @param  list<array{date: string, time_start: string, time_end: string}>  $occurrences
+     */
+    private function assertMaintenanceClear(int $venueId, array $occurrences): void
+    {
+        $maintenance = VenueMaintenance::blocking(
+            $venueId,
+            array_column($occurrences, 'date'),
+        );
+
+        if ($maintenance) {
+            throw ValidationException::withMessages([
+                'venue_id' => [$maintenance->bookingMessage()],
+            ]);
+        }
     }
 }

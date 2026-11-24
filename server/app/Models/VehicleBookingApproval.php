@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Signatures\SignatureStorage;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -20,6 +21,14 @@ class VehicleBookingApproval extends Model
         'approval_stage',
         'action',
         'remarks',
+        'signature_path',
+        'signature_mime',
+        'signer_name',
+        'signer_position',
+    ];
+
+    protected $hidden = [
+        'signature_path',
     ];
 
     protected $casts = [
@@ -39,5 +48,12 @@ class VehicleBookingApproval extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approver_user_id', 'user_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (VehicleBookingApproval $approval) {
+            SignatureStorage::deleteApprovalFile($approval->signature_path);
+        });
     }
 }

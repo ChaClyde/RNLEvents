@@ -19,17 +19,6 @@ return new class extends Migration
             $table->string('contact_number', 30)->nullable();
             $table->string('email', 255)->nullable();
 
-            // License (an expired license blocks assignment)
-            $table->string('license_number', 50)->nullable()->unique();
-            $table->date('license_expiry')->nullable();
-
-            // Assignment
-            $table->boolean('is_reliever')->default(false);
-            $table->foreignId('default_vehicle_id')
-                ->nullable()
-                ->constrained('tbl_vehicles', 'vehicle_id')
-                ->nullOnDelete();
-
             // Availability
             $table->enum('driver_status', [
                 'Available',

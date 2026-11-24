@@ -51,6 +51,16 @@ class Venue extends Model
     |--------------------------------------------------------------------------
     */
 
+    public function rates(): HasMany
+    {
+        return $this->hasMany(VenueRate::class, 'venue_id', 'venue_id');
+    }
+
+    public function maintenance(): HasMany
+    {
+        return $this->hasMany(VenueMaintenance::class, 'venue_id', 'venue_id');
+    }
+
     public function resources(): HasMany
     {
         return $this->hasMany(

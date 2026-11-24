@@ -8,15 +8,19 @@ use App\Models\Role;
 use App\Models\User;
 use App\Models\Venue;
 use App\Permissions\Permission;
+use App\Signatures\SignatureStorage;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Tests\Support\ProvidesUserSignature;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ApiPermissionEnforcementTest extends TestCase
 {
+    use ProvidesUserSignature;
     use RefreshDatabase;
 
     private Office $officeA;
@@ -188,11 +192,11 @@ class ApiPermissionEnforcementTest extends TestCase
 
     public function test_event_approval_admin_permissions(): void
     {
-        $user = $this->asRole(Role::EVENT_APPROVAL_ADMIN);
+        $user = $this->asRole(Role::ADMIN_APPROVALS);
 
         $user->getJson('/api/event-bookings')->assertOk();
 
-        $user->getJson('/api/venues/loadVenues')->assertForbidden();
+        $user->getJson('/api/venues/loadVenues')->assertOk();
         $user->postJson('/api/event-bookings/storeEventBooking', [])->assertForbidden();
         $user->getJson('/api/users/loadUsers')->assertForbidden();
         $user->getJson('/api/vehicles/loadVehicles')->assertForbidden();
@@ -200,7 +204,7 @@ class ApiPermissionEnforcementTest extends TestCase
 
     public function test_vehicle_approval_admin_permissions(): void
     {
-        $user = $this->asRole(Role::VEHICLE_APPROVAL_ADMIN);
+        $user = $this->asRole(Role::ADMIN_APPROVALS);
 
         $user->getJson('/api/event-bookings')->assertForbidden();
         $user->getJson('/api/vehicles/loadVehicles')->assertForbidden();
@@ -216,8 +220,8 @@ class ApiPermissionEnforcementTest extends TestCase
         $user->postJson('/api/users/storeUser', [])->assertStatus(422);
 
         $user->getJson('/api/roles/loadRoles')->assertForbidden();
-        $user->getJson('/api/offices/loadOffices')->assertForbidden();
-        $user->getJson('/api/venues/loadVenues')->assertForbidden();
+        $user->getJson('/api/offices/loadOffices')->assertOk();
+        $user->getJson('/api/venues/loadVenues')->assertOk();
         $user->getJson('/api/event-bookings')->assertOk();
         $user->postJson('/api/event-bookings/storeEventBooking', [])->assertForbidden();
         $user->getJson('/api/users/trash')->assertForbidden();
@@ -268,7 +272,7 @@ class ApiPermissionEnforcementTest extends TestCase
         $faculty->getJson('/api/vehicle-bookings')->assertOk();
         $faculty->postJson('/api/vehicle-bookings/storeVehicleBooking', [])->assertStatus(422);
         $faculty->getJson('/api/users/loadUsers')->assertForbidden();
-        $faculty->getJson('/api/venues/loadVenues')->assertForbidden();
+        $faculty->getJson('/api/venues/loadVenues')->assertOk();
         $faculty->postJson('/api/users/storeUser', [])->assertForbidden();
 
         $student = $this->asRole(Role::STUDENT_REPUBLIC);
@@ -286,7 +290,7 @@ class ApiPermissionEnforcementTest extends TestCase
     {
         $admin = $this->asRole(Role::SUPER_ADMIN);
 
-        $admin->postJson('/api/event-bookings/storeEventBooking', [])
+        $admin->postJson('/api/event-bookings/storeEventBooking', $this->eventBookingPayload())
             ->assertForbidden();
 
         $admin->postJson('/api/vehicle-bookings/storeVehicleBooking', [])
@@ -317,7 +321,7 @@ class ApiPermissionEnforcementTest extends TestCase
     {
         $this->asRole(Role::EVENT_ADMIN)
             ->withHeaders(['X-Emergency-Bypass' => '1'])
-            ->postJson('/api/event-bookings/storeEventBooking', [])
+            ->postJson('/api/event-bookings/storeEventBooking', $this->eventBookingPayload())
             ->assertForbidden();
     }
 
@@ -354,13 +358,20 @@ class ApiPermissionEnforcementTest extends TestCase
             ])
             ->assertForbidden();
 
+        Storage::fake(SignatureStorage::USER_DISK);
+        Storage::fake(SignatureStorage::APPROVAL_DISK);
+        $this->giveSignature($this->users[Role::DEAN_OFFICE_HEAD]);
+
         $this->asRole(Role::DEAN_OFFICE_HEAD)
             ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
                 'status' => 'approved',
             ])
             ->assertOk();
 
-        $booking->update(['status' => 'pending', 'approval_stage' => 'office_head']);
+        $booking->refresh()->update([
+            'status' => 'pending',
+            'approval_stage' => 'office_head',
+        ]);
 
         $this->asRole(Role::EVENT_ADMIN)
             ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
@@ -382,6 +393,34 @@ class ApiPermissionEnforcementTest extends TestCase
             in_array($response->status(), [200, 201], true),
             'Office create should succeed for Super Admin. Got ' . $response->status() . ' ' . $response->getContent()
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function eventBookingPayload(): array
+    {
+        $venue = Venue::create([
+            'venue' => 'Permission Hall',
+            'capacity' => 40,
+            'location' => 'Campus',
+            'status' => 'available',
+            'is_deleted' => false,
+        ]);
+
+        return [
+            'venue_id' => $venue->venue_id,
+            'purpose' => 'Ordinary booking',
+            'schedule_type' => 'range',
+            'date_start' => now()->addDays(2)->toDateString(),
+            'date_end' => now()->addDays(2)->toDateString(),
+            'time_start' => '09:00',
+            'time_end' => '10:00',
+            'expected_attendees' => 10,
+            'requested_by' => 'Requester',
+            'email' => 'requester@example.com',
+            'tel_number' => '1234567',
+        ];
     }
 
     private function asRole(string $slug)

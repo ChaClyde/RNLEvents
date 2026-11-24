@@ -76,7 +76,18 @@ class VehicleReportExporter
             $row['cancelled'],
         ], $payload['offices']);
 
+        $highlightRows = array_map(
+            fn (array $row) => [$row['label'], $row['value']],
+            $payload['highlights'] ?? []
+        );
+
         $sheets = [
+            [
+                'name' => 'Highlights',
+                'headers' => ['Finding', 'Result'],
+                'rows' => $highlightRows,
+                'widths' => [42, 36],
+            ],
             [
                 'name' => 'Vehicle Bookings',
                 'headers' => [

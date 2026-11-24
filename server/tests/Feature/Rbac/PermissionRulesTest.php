@@ -102,23 +102,27 @@ class PermissionRulesTest extends TestCase
 
         $this->assertEqualsCanonicalizing([
             'dashboard',
+            'event_management',
+            'vehicle_management',
             'booking_management',
             'approval_management',
             'reports',
             'messenger',
-        ], $this->userFor(Role::EVENT_APPROVAL_ADMIN)->visibleSidebarGroups());
+        ], $this->userFor(Role::ADMIN_APPROVALS)->visibleSidebarGroups());
 
         $this->assertEqualsCanonicalizing([
             'dashboard',
+            'vehicle_management',
             'booking_management',
             'approval_management',
             'reports',
             'messenger',
-        ], $this->userFor(Role::VEHICLE_APPROVAL_ADMIN)->visibleSidebarGroups());
+        ], $this->userFor(Role::OIC_BUDGET)->visibleSidebarGroups());
 
         $this->assertEqualsCanonicalizing([
             'dashboard',
             'user_management',
+            'event_management',
             'approval_management',
             'reports',
             'messenger',
@@ -126,6 +130,8 @@ class PermissionRulesTest extends TestCase
 
         $this->assertEqualsCanonicalizing([
             'dashboard',
+            'event_management',
+            'vehicle_management',
             'booking_management',
             'approval_management',
             'messenger',
@@ -133,6 +139,7 @@ class PermissionRulesTest extends TestCase
 
         $this->assertEqualsCanonicalizing([
             'dashboard',
+            'event_management',
             'booking_management',
             'approval_management',
             'messenger',
@@ -232,7 +239,7 @@ class PermissionRulesTest extends TestCase
 
     public function test_reports_are_limited_only_for_approval_admins(): void
     {
-        $eventApprover = $this->userFor(Role::EVENT_APPROVAL_ADMIN);
+        $eventApprover = $this->userFor(Role::ADMIN_APPROVALS);
         $eventAdmin = $this->userFor(Role::EVENT_ADMIN);
         $dean = $this->userFor(Role::DEAN_OFFICE_HEAD);
 
@@ -304,6 +311,7 @@ class PermissionRulesTest extends TestCase
                 $this->crud('roles'),
                 $this->crud('offices'),
                 $this->crud('venues'),
+                $this->crud('venue_rates'),
                 $this->crud('events'),
                 $this->crud('vehicles'),
                 $this->crud('drivers'),
@@ -312,6 +320,7 @@ class PermissionRulesTest extends TestCase
                     Permission::EVENT_BOOKINGS_VIEW,
                     Permission::EVENT_BOOKINGS_EDIT,
                     Permission::EVENT_BOOKINGS_DELETE,
+                    Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE,
                     Permission::VEHICLE_BOOKINGS_VIEW,
                     Permission::VEHICLE_BOOKINGS_EDIT,
                     Permission::VEHICLE_BOOKINGS_DELETE,
@@ -337,10 +346,12 @@ class PermissionRulesTest extends TestCase
             ),
             Role::EVENT_ADMIN => array_merge(
                 $this->crud('venues'),
+                $this->crud('venue_rates'),
                 $this->crud('events'),
                 [
                     Permission::DASHBOARD_VIEW,
                     Permission::EVENT_BOOKINGS_VIEW,
+                    Permission::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE,
                     Permission::EVENT_APPROVALS_VIEW,
                     Permission::EVENT_APPROVALS_APPROVE,
                     Permission::MESSENGER_VIEW,
@@ -361,16 +372,21 @@ class PermissionRulesTest extends TestCase
                     Permission::REPORTS_VIEW_VEHICLE,
                 ]
             ),
-            Role::EVENT_APPROVAL_ADMIN => [
+            Role::ADMIN_APPROVALS => [
                 Permission::DASHBOARD_VIEW,
+                Permission::EVENTS_VIEW,
                 Permission::EVENT_BOOKINGS_VIEW,
                 Permission::EVENT_APPROVALS_VIEW,
                 Permission::EVENT_APPROVALS_APPROVE,
+                Permission::VEHICLE_BOOKINGS_VIEW,
+                Permission::VEHICLE_APPROVALS_VIEW,
+                Permission::VEHICLE_APPROVALS_APPROVE,
                 Permission::MESSENGER_VIEW,
                 Permission::REPORTS_VIEW,
                 Permission::REPORTS_VIEW_EVENT,
+                Permission::REPORTS_VIEW_VEHICLE,
             ],
-            Role::VEHICLE_APPROVAL_ADMIN => [
+            Role::OIC_BUDGET => [
                 Permission::DASHBOARD_VIEW,
                 Permission::VEHICLE_BOOKINGS_VIEW,
                 Permission::VEHICLE_APPROVALS_VIEW,
@@ -383,6 +399,7 @@ class PermissionRulesTest extends TestCase
                 $this->crud('users'),
                 [
                     Permission::DASHBOARD_VIEW,
+                    Permission::EVENTS_VIEW,
                     Permission::EVENT_APPROVALS_VIEW,
                     Permission::EVENT_APPROVALS_APPROVE,
                     Permission::VEHICLE_APPROVALS_VIEW,
@@ -394,6 +411,7 @@ class PermissionRulesTest extends TestCase
             ),
             Role::FACULTY_STAFF => [
                 Permission::DASHBOARD_VIEW,
+                Permission::EVENTS_VIEW,
                 Permission::EVENT_BOOKINGS_VIEW,
                 Permission::EVENT_BOOKINGS_CREATE,
                 Permission::EVENT_BOOKINGS_EDIT,
@@ -408,6 +426,7 @@ class PermissionRulesTest extends TestCase
             ],
             Role::STUDENT_REPUBLIC => [
                 Permission::DASHBOARD_VIEW,
+                Permission::EVENTS_VIEW,
                 Permission::EVENT_BOOKINGS_VIEW,
                 Permission::EVENT_BOOKINGS_CREATE,
                 Permission::EVENT_BOOKINGS_EDIT,

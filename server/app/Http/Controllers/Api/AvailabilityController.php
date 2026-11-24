@@ -66,7 +66,16 @@ class AvailabilityController extends Controller
             ->where('is_deleted', false)
             ->findOrFail($validated['vehicle_id']);
 
+        // Manual switch (available / unavailable)
         $statusBlocked = $vehicle->status !== 'available';
+
+        // Scheduled maintenance on any day of the trip
+        $maintenance = $vehicle->maintenanceBetween(
+            $window['start']->toDateString(),
+            $window['end']->toDateString(),
+        );
+        $maintenanceBlocked = $maintenance !== null;
+
         $capacityBlocked = isset($validated['passenger_count'])
             && (int) $validated['passenger_count'] > (int) $vehicle->capacity;
 
@@ -85,13 +94,18 @@ class AvailabilityController extends Controller
             return $canSee ? $checker->detailed($booking) : $checker->sanitized($booking);
         })->values();
 
-        $available = !$statusBlocked && !$capacityBlocked && $conflicts->isEmpty();
+        $available = !$statusBlocked
+            && !$maintenanceBlocked
+            && !$capacityBlocked
+            && $conflicts->isEmpty();
 
         $message = 'This vehicle is available for the selected schedule.';
-        if ($vehicle->status === 'maintenance') {
+        if ($statusBlocked && $vehicle->status === 'maintenance') {
             $message = 'This vehicle is under maintenance and cannot be assigned.';
         } elseif ($statusBlocked) {
             $message = 'This vehicle is unavailable and cannot be assigned.';
+        } elseif ($maintenanceBlocked) {
+            $message = "This vehicle is under scheduled maintenance ({$maintenance->reason}) {$maintenance->range_label} and cannot be assigned.";
         } elseif ($capacityBlocked) {
             $message = "This vehicle's capacity is {$vehicle->capacity} passengers.";
         } elseif ($conflicts->isNotEmpty()) {
@@ -101,7 +115,24 @@ class AvailabilityController extends Controller
         return response()->json([
             'available' => $available,
             'conflicts' => $conflicts,
-            'vehicle_status' => $vehicle->status,
+
+            // "maintenance" when scheduled maintenance covers the trip dates.
+            // The manual "unavailable" switch takes priority.
+            'vehicle_status' => $maintenanceBlocked && !$statusBlocked
+                ? 'maintenance'
+                : $vehicle->status,
+
+            // Details of the maintenance that blocks the trip (notes are not shared)
+            'maintenance' => $maintenance
+                ? [
+                    'maintenance_id' => $maintenance->maintenance_id,
+                    'reason' => $maintenance->reason,
+                    'date_start' => $maintenance->date_start->toDateString(),
+                    'date_end' => $maintenance->date_end->toDateString(),
+                    'range_label' => $maintenance->range_label,
+                ]
+                : null,
+
             'capacity' => $vehicle->capacity,
             'message' => $message,
         ]);
@@ -186,5 +217,4 @@ class AvailabilityController extends Controller
             'end' => SchedulePeriod::combine($validated['expected_return_date'], $validated['expected_return_time']),
         ];
     }
-
 }

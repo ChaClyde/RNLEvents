@@ -59,8 +59,14 @@ class VehicleReportApiTest extends TestCase
             'vehicle_name' => 'Van Beta',
             'plate_number' => 'VR-BBB',
             'capacity' => 8,
-            'status' => 'maintenance',
+            'status' => 'available',
             'is_deleted' => false,
+        ]);
+        $this->vanB->maintenance()->create([
+            'reason' => 'Brake service',
+            'date_start' => now()->toDateString(),
+            'date_end' => now()->addDay()->toDateString(),
+            'status' => 'scheduled',
         ]);
         $this->driverA = Driver::create([
             'driver_name' => 'Driver Alpha',
@@ -152,7 +158,7 @@ class VehicleReportApiTest extends TestCase
     {
         $this->seedBookings();
 
-        $this->asRole(Role::VEHICLE_APPROVAL_ADMIN)
+        $this->asRole(Role::ADMIN_APPROVALS)
             ->getJson('/api/reports/vehicles/summary')
             ->assertOk()
             ->assertJsonPath('data.limited', true)
@@ -189,7 +195,7 @@ class VehicleReportApiTest extends TestCase
     {
         foreach ([
             Role::EVENT_ADMIN,
-            Role::EVENT_APPROVAL_ADMIN,
+            Role::ADMIN_APPROVALS,
             Role::FACULTY_STAFF,
             Role::STUDENT_REPUBLIC,
         ] as $slug) {

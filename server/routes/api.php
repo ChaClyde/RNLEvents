@@ -6,18 +6,33 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\OfficeController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VenueController;
+use App\Http\Controllers\Api\VenueRateController;
 use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\DriverController;
+use App\Http\Controllers\Api\EventBookingApprovalSignatureController;
+use App\Http\Controllers\Api\EventBookingAttachmentController;
+use App\Http\Controllers\Api\EventBookingSlipController;
+use App\Http\Controllers\Api\UserSignatureController;
 use App\Http\Controllers\Api\EventBookingController;
+use App\Http\Controllers\Api\FacilityRateController;
 use App\Http\Controllers\Api\VehicleBookingController;
+use App\Http\Controllers\Api\VehicleBookingAttachmentController;
+use App\Http\Controllers\Api\VehicleBookingSlipController;
+use App\Http\Controllers\Api\VehicleResourceCalendarController;
 use App\Http\Controllers\Api\AvailabilityController;
 use App\Http\Controllers\Api\CalendarController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\AnnouncementController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\BookingHistoryController;
+use App\Http\Controllers\Api\MessengerController;
 use App\Http\Controllers\Api\EventReportController;
 use App\Http\Controllers\Api\VehicleReportController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\VenueCalendarController;
+use App\Http\Controllers\Api\VehicleMaintenanceController;
+use App\Http\Controllers\Api\VenueMaintenanceController;
 
 
 // ============================================================
@@ -38,6 +53,11 @@ Route::prefix('auth')->group(function () {
 
 Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
 
+    Route::get('/account/signature', [UserSignatureController::class, 'show']);
+    Route::get('/account/signature/image', [UserSignatureController::class, 'image']);
+    Route::post('/account/signature', [UserSignatureController::class, 'store']);
+    Route::delete('/account/signature', [UserSignatureController::class, 'destroy']);
+
     Route::get('/dashboard', [DashboardController::class, 'show'])
         ->middleware('permission:dashboard.view');
 
@@ -49,6 +69,25 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::get('/bookings', [EventReportController::class, 'bookings']);
         Route::get('/export/pdf', [EventReportController::class, 'exportPdf']);
         Route::get('/export/excel', [EventReportController::class, 'exportExcel']);
+    });
+
+    Route::get('/booking-history', [BookingHistoryController::class, 'index'])
+        ->middleware('permission:system_history.view');
+
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+
+    Route::get('/announcements', [AnnouncementController::class, 'index']);
+    Route::post('/announcements', [AnnouncementController::class, 'store']);
+    Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy']);
+
+    Route::prefix('messenger')->middleware('permission:messenger.view')->group(function () {
+        Route::get('/users', [MessengerController::class, 'users']);
+        Route::get('/conversations', [MessengerController::class, 'conversations']);
+        Route::post('/conversations', [MessengerController::class, 'open']);
+        Route::get('/conversations/{conversation}/messages', [MessengerController::class, 'messages']);
+        Route::post('/conversations/{conversation}/messages', [MessengerController::class, 'send']);
     });
 
     Route::prefix('reports/vehicles')->middleware('permission:reports.view')->group(function () {
@@ -202,6 +241,39 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
                 ->middleware('permission:venues.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
             Route::delete('/removeVenueImage/{venue_id}', 'removeVenueImage')
                 ->middleware('permission:venues.edit');
+
+            Route::get('/{venue_id}/rates', [VenueRateController::class, 'index'])
+                ->whereNumber('venue_id')
+                ->middleware('permission:venue_rates.view,or:venues.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
+            Route::post('/{venue_id}/rates', [VenueRateController::class, 'store'])
+                ->whereNumber('venue_id')
+                ->middleware('permission:venue_rates.create');
+            Route::put('/{venue_id}/rates/{venue_rate_id}', [VenueRateController::class, 'update'])
+                ->whereNumber('venue_id')
+                ->whereNumber('venue_rate_id')
+                ->middleware('permission:venue_rates.edit');
+            Route::delete('/{venue_id}/rates/{venue_rate_id}', [VenueRateController::class, 'destroy'])
+                ->whereNumber('venue_id')
+                ->whereNumber('venue_rate_id')
+                ->middleware('permission:venue_rates.delete');
+        });
+
+    Route::controller(VenueMaintenanceController::class)
+        ->prefix('venue-maintenance')
+        ->group(function () {
+            Route::get('/', 'loadMaintenance')
+                ->middleware('permission:venues.view,or:event_bookings.view,or:event_bookings.create,or:event_approvals.view');
+            Route::post('/storeMaintenance', 'storeMaintenance')
+                ->middleware('permission:venues.edit');
+            Route::put('/updateMaintenance/{maintenance_id}', 'updateMaintenance')
+                ->whereNumber('maintenance_id')
+                ->middleware('permission:venues.edit');
+            Route::put('/updateStatus/{maintenance_id}', 'updateMaintenanceStatus')
+                ->whereNumber('maintenance_id')
+                ->middleware('permission:venues.edit');
+            Route::delete('/destroyMaintenance/{maintenance_id}', 'destroyMaintenance')
+                ->whereNumber('maintenance_id')
+                ->middleware('permission:venues.delete');
         });
 
 
@@ -235,7 +307,7 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         ->prefix('vehicles')
         ->group(function () {
             Route::get('/loadVehicles', 'loadVehicles')
-                ->middleware('permission:vehicles.view');
+                ->middleware('permission:vehicles.view,or:vehicle_bookings.view,or:vehicle_bookings.create,or:vehicle_approvals.view');
             Route::get('/getVehicle/{vehicle_id}', 'getVehicle')
                 ->middleware('permission:vehicles.view');
 
@@ -255,7 +327,32 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
                 ->middleware('permission:trash.force_delete');
 
             Route::get('/getVehicleImage/{vehicle_id}', 'showVehicleImage')
+                ->middleware('permission:vehicles.view,or:vehicle_bookings.view,or:vehicle_bookings.create,or:vehicle_approvals.view');
+        });
+
+
+    // ============================================================
+    // VEHICLE MAINTENANCE (scheduled maintenance sheet)
+    // ============================================================
+
+    Route::controller(VehicleMaintenanceController::class)
+        ->prefix('vehicle-maintenance')
+        ->group(function () {
+            Route::get('/', 'loadMaintenance')
                 ->middleware('permission:vehicles.view');
+            Route::get('/{maintenance_id}', 'getMaintenance')
+                ->whereNumber('maintenance_id')
+                ->middleware('permission:vehicles.view');
+
+            Route::post('/storeMaintenance', 'storeMaintenance')
+                ->middleware('permission:vehicles.edit');
+            Route::put('/updateMaintenance/{maintenance_id}', 'updateMaintenance')
+                ->middleware('permission:vehicles.edit');
+            Route::put('/updateStatus/{maintenance_id}', 'updateMaintenanceStatus')
+                ->middleware('permission:vehicles.edit');
+
+            Route::delete('/destroyMaintenance/{maintenance_id}', 'destroyMaintenance')
+                ->middleware('permission:vehicles.delete');
         });
 
 
@@ -267,7 +364,7 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         ->prefix('drivers')
         ->group(function () {
             Route::get('/loadDrivers', 'loadDrivers')
-                ->middleware('permission:drivers.view');
+                ->middleware('permission:drivers.view,or:vehicle_bookings.view,or:vehicle_bookings.create,or:vehicle_approvals.view');
             Route::get('/getDriver/{driver_id}', 'getDriver')
                 ->middleware('permission:drivers.view');
 
@@ -299,18 +396,61 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
                 ->middleware('permission:event_bookings.view,or:event_approvals.view');
             Route::get('/trash', 'loadTrash')
                 ->middleware('permission:trash.view');
+            Route::get('/awaiting-my-approval', 'loadAwaitingMyApproval')
+                ->middleware('permission:event_approvals.approve');
+            Route::get('/{event_booking_id}/attachments', [EventBookingAttachmentController::class, 'index'])
+                ->whereNumber('event_booking_id')
+                ->middleware('permission:event_bookings.view,or:event_approvals.view');
+            Route::post('/{event_booking_id}/attachments', [EventBookingAttachmentController::class, 'store'])
+                ->whereNumber('event_booking_id')
+                ->middleware('permission:event_bookings.create,or:event_bookings.edit');
+            Route::get('/{event_booking_id}/attachments/{attachment_id}/preview', [EventBookingAttachmentController::class, 'preview'])
+                ->whereNumber('event_booking_id')
+                ->whereNumber('attachment_id')
+                ->middleware('permission:event_bookings.view,or:event_approvals.view');
+            Route::get('/{event_booking_id}/attachments/{attachment_id}/download', [EventBookingAttachmentController::class, 'download'])
+                ->whereNumber('event_booking_id')
+                ->whereNumber('attachment_id')
+                ->middleware('permission:event_bookings.view,or:event_approvals.view');
+            Route::delete('/{event_booking_id}/attachments/{attachment_id}', [EventBookingAttachmentController::class, 'destroy'])
+                ->whereNumber('event_booking_id')
+                ->whereNumber('attachment_id')
+                ->middleware('permission:event_bookings.create,or:event_bookings.edit');
+            Route::get('/facility-rates', [FacilityRateController::class, 'index'])
+                ->middleware('permission:event_bookings.view,or:event_approvals.view,or:venue_rates.view');
+            Route::put('/{event_booking_id}/fee-calculation', [EventBookingController::class, 'updateFeeCalculation'])
+                ->whereNumber('event_booking_id')
+                ->middleware('permission:event_approvals.approve');
+            Route::get('/{event_booking_id}/requester-signature', [EventBookingSlipController::class, 'requesterSignature'])
+                ->whereNumber('event_booking_id')
+                ->middleware('permission:event_bookings.view,or:event_approvals.view');
+            Route::get('/{event_booking_id}/booking-slip/preview', [EventBookingSlipController::class, 'preview'])
+                ->whereNumber('event_booking_id')
+                ->middleware('permission:event_bookings.view,or:event_approvals.view');
+            Route::get('/{event_booking_id}/booking-slip/download', [EventBookingSlipController::class, 'download'])
+                ->whereNumber('event_booking_id')
+                ->middleware('permission:event_bookings.view,or:event_approvals.view');
+            Route::get('/{event_booking_id}/approvals/{approval_id}/signature', [EventBookingApprovalSignatureController::class, 'show'])
+                ->whereNumber('event_booking_id')
+                ->whereNumber('approval_id')
+                ->middleware('permission:event_bookings.view,or:event_approvals.view');
+
             Route::get('/{event_booking_id}', 'getEventBooking')
                 ->whereNumber('event_booking_id')
                 ->middleware('permission:event_bookings.view,or:event_approvals.view');
 
             Route::post('/storeEventBooking', 'storeEventBooking')
-                ->middleware('permission:event_bookings.create,bypassable');
+                ->middleware('permission:event_bookings.create,or:event_bookings.designate_university_wide,bypassable');
             Route::put('/updateEventBooking/{event_booking_id}', 'updateEventBooking')
                 ->middleware('permission:event_bookings.edit');
             Route::delete('/destroyEventBooking/{event_booking_id}', 'destroyEventBooking')
                 ->middleware('permission:event_bookings.delete');
+
+            // Used by the booking form for both new and edited bookings
             Route::post('/checkAvailability', 'checkAvailability')
-                ->middleware('permission:event_bookings.create,bypassable');
+                ->middleware('permission:event_bookings.create,or:event_bookings.edit,or:event_bookings.designate_university_wide,bypassable');
+            Route::post('/previewFee', 'previewFee')
+                ->middleware('permission:event_bookings.create,or:event_bookings.edit,bypassable');
 
             Route::put('/updateStatus/{event_booking_id}', 'updateEventBookingStatus');
 
@@ -330,6 +470,25 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         ->group(function () {
             Route::get('/', 'loadVehicleBookings')
                 ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view');
+            Route::get('/awaiting-my-approval', 'loadAwaitingMyApproval')
+                ->middleware('permission:vehicle_approvals.approve');
+            Route::post('/{vehicle_booking_id}/attachments', [VehicleBookingAttachmentController::class, 'store'])
+                ->whereNumber('vehicle_booking_id')
+                ->middleware('permission:vehicle_bookings.create,or:vehicle_bookings.edit');
+            Route::get('/{vehicle_booking_id}/attachments/{attachment_id}/preview', [VehicleBookingAttachmentController::class, 'preview'])
+                ->whereNumber('vehicle_booking_id')
+                ->whereNumber('attachment_id')
+                ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view');
+            Route::get('/{vehicle_booking_id}/attachments/{attachment_id}/download', [VehicleBookingAttachmentController::class, 'download'])
+                ->whereNumber('vehicle_booking_id')
+                ->whereNumber('attachment_id')
+                ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view');
+            Route::get('/{vehicle_booking_id}/booking-slip/preview', [VehicleBookingSlipController::class, 'preview'])
+                ->whereNumber('vehicle_booking_id')
+                ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view');
+            Route::get('/{vehicle_booking_id}/booking-slip/download', [VehicleBookingSlipController::class, 'download'])
+                ->whereNumber('vehicle_booking_id')
+                ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view');
             Route::get('/trash', 'loadTrash')
                 ->middleware('permission:trash.view');
             Route::get('/{vehicle_booking_id}', 'getVehicleBooking')
@@ -344,6 +503,8 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
                 ->middleware('permission:vehicle_bookings.delete');
 
             Route::put('/updateStatus/{vehicle_booking_id}', 'updateVehicleBookingStatus');
+            Route::put('/charges/{vehicle_booking_id}', 'updateChargeCalculation')
+                ->middleware('permission:vehicle_approvals.approve');
             Route::put('/assign/{vehicle_booking_id}', 'assignVehicleBooking');
 
             Route::put('/restoreVehicleBooking/{vehicle_booking_id}', 'restoreVehicleBooking')
@@ -369,14 +530,29 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
             ->whereNumber('venue_id')
             ->middleware('permission:event_bookings.create,or:event_bookings.view,or:event_approvals.view');
 
+        // Same access as the venue lookup above, so a requester who can
+        // create a booking can also load the vehicles and drivers
+        Route::get('/vehicles/{vehicle_id}/calendar', [VehicleResourceCalendarController::class, 'vehicleMonth'])
+            ->whereNumber('vehicle_id')
+            ->middleware('permission:vehicle_bookings.create,or:vehicle_bookings.view,or:vehicle_approvals.view,or:vehicles.view');
+        Route::get('/vehicles/{vehicle_id}/day', [VehicleResourceCalendarController::class, 'vehicleDay'])
+            ->whereNumber('vehicle_id')
+            ->middleware('permission:vehicle_bookings.create,or:vehicle_bookings.view,or:vehicle_approvals.view,or:vehicles.view');
+        Route::get('/drivers/{driver_id}/calendar', [VehicleResourceCalendarController::class, 'driverMonth'])
+            ->whereNumber('driver_id')
+            ->middleware('permission:vehicle_bookings.create,or:vehicle_bookings.view,or:vehicle_approvals.view,or:drivers.view');
+        Route::get('/drivers/{driver_id}/day', [VehicleResourceCalendarController::class, 'driverDay'])
+            ->whereNumber('driver_id')
+            ->middleware('permission:vehicle_bookings.create,or:vehicle_bookings.view,or:vehicle_approvals.view,or:drivers.view');
+
         Route::get('/vehicles', [AvailabilityController::class, 'vehicles'])
-            ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view,or:vehicles.view');
+            ->middleware('permission:vehicle_bookings.create,or:vehicle_bookings.view,or:vehicle_approvals.view,or:vehicles.view,bypassable');
         Route::get('/drivers', [AvailabilityController::class, 'drivers'])
-            ->middleware('permission:vehicle_bookings.view,or:vehicle_approvals.view,or:drivers.view');
+            ->middleware('permission:vehicle_bookings.create,or:vehicle_bookings.view,or:vehicle_approvals.view,or:drivers.view,bypassable');
     });
 
     Route::get('/calendar/options', [CalendarController::class, 'options'])
         ->middleware('permission:event_bookings.view,or:vehicle_bookings.view,or:event_approvals.view,or:vehicle_approvals.view,or:events.view');
     Route::get('/calendar', [CalendarController::class, 'index'])
         ->middleware('permission:event_bookings.view,or:vehicle_bookings.view,or:event_approvals.view,or:vehicle_approvals.view,or:events.view');
-    });
+});

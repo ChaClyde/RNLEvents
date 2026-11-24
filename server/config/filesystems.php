@@ -71,6 +71,38 @@ return [
             'report' => false,
         ],
 
+        'vehicle_booking_attachments' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/vehicle_booking_attachments'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'event_booking_attachments' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/event_booking_attachments'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'user_signatures' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/user_signatures'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'approval_signatures' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/approval_signatures'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

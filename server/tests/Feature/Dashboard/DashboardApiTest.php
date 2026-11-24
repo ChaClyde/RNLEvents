@@ -227,16 +227,16 @@ class DashboardApiTest extends TestCase
 
         EventBookingApproval::create([
             'event_booking_id' => EventBooking::query()->latest('event_booking_id')->first()->event_booking_id,
-            'approver_user_id' => $this->users[Role::EVENT_APPROVAL_ADMIN]->user_id,
+            'approver_user_id' => $this->users[Role::ADMIN_APPROVALS]->user_id,
             'approval_stage' => ApprovalStage::EVENT_APPROVAL,
             'action' => EventBookingApproval::ACTION_APPROVED,
         ]);
 
         $cards = $this->cards(
-            $this->asRole(Role::EVENT_APPROVAL_ADMIN)->getJson('/api/dashboard')->assertOk()
+            $this->asRole(Role::ADMIN_APPROVALS)->getJson('/api/dashboard')->assertOk()
         );
 
-        $this->assertSame(1, $cards['pending_event_approvals']);
+        $this->assertSame(0, $cards['pending_event_approvals']);
         $this->assertSame(1, $cards['approved_event_reviews']);
         $this->assertSame(1, $cards['total_events_reviewed']);
     }

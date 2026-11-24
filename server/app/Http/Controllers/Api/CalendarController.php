@@ -10,6 +10,7 @@ use App\Models\EventBooking;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleBooking;
+use App\Models\VehicleMaintenance;
 use App\Models\Venue;
 use App\Permissions\Permission;
 use App\Scheduling\SchedulePeriod;
@@ -38,7 +39,11 @@ class CalendarController extends Controller
         }
 
         if ($type === null || $type === 'vehicle_booking') {
-            $items = array_merge($items, $this->vehicleBookings($user, $from, $to));
+            $items = array_merge(
+                $items,
+                $this->vehicleBookings($user, $from, $to),
+                $this->vehicleUnavailability($user, $from, $to),
+            );
         }
 
         if ($type === null || $type === 'event') {
@@ -195,9 +200,17 @@ class CalendarController extends Controller
             return [];
         }
 
-        return Event::query()
-            ->with(['venue:venue_id,venue'])
-            ->where('is_deleted', false)
+        $query = $this->constrainByPermission(
+            Event::query()
+                ->with(['venue:venue_id,venue'])
+                ->where('is_deleted', false)
+                ->where('status', 'approved')
+                ->whereDate('date_start', '<=', $to),
+            $user,
+            Permission::EVENTS_VIEW,
+        );
+
+        return $query
             ->whereDate('date_start', '<=', $to)
             ->whereDate('date_end', '>=', $from)
             ->get()
@@ -223,9 +236,62 @@ class CalendarController extends Controller
     /**
      * @return list<array<string, mixed>>
      */
+    private function vehicleUnavailability(User $user, string $from, string $to): array
+    {
+        if (!$user->allows(Permission::VEHICLES_VIEW) && !$user->allows(Permission::VEHICLE_BOOKINGS_VIEW)) {
+            return [];
+        }
+
+        $items = Vehicle::query()
+            ->where('is_deleted', false)
+            ->whereIn('status', ['unavailable', 'maintenance'])
+            ->get()
+            ->map(function (Vehicle $vehicle) use ($from, $to) {
+                $label = $vehicle->status === 'maintenance' ? 'Under maintenance' : 'Unavailable';
+
+                return [
+                    'id' => 'vehicle-status-' . $vehicle->vehicle_id,
+                    'type' => 'vehicle_booking',
+                    'title' => $vehicle->vehicle_name . ' · ' . $label,
+                    'status' => 'unavailable',
+                    'start' => $from . 'T00:00:00',
+                    'end' => $to . 'T23:59:59',
+                    'vehicle_id' => $vehicle->vehicle_id,
+                    'driver_id' => null,
+                    'resource_label' => $vehicle->vehicle_name,
+                    'unavailability_reason' => $label,
+                ];
+            })
+            ->all();
+
+        $maintenance = VehicleMaintenance::query()
+            ->with('vehicle:vehicle_id,vehicle_name')
+            ->where('status', 'scheduled')
+            ->whereDate('date_start', '<=', $to)
+            ->whereDate('date_end', '>=', $from)
+            ->get();
+
+        foreach ($maintenance as $row) {
+            $items[] = [
+                'id' => 'vehicle-maintenance-' . $row->maintenance_id,
+                'type' => 'vehicle_booking',
+                'title' => ($row->vehicle?->vehicle_name ?? 'Vehicle') . ' · Under maintenance',
+                'status' => 'unavailable',
+                'start' => $row->date_start->toDateString() . 'T00:00:00',
+                'end' => $row->date_end->toDateString() . 'T23:59:59',
+                'vehicle_id' => $row->vehicle_id,
+                'driver_id' => null,
+                'resource_label' => $row->vehicle?->vehicle_name,
+                'unavailability_reason' => $row->reason,
+            ];
+        }
+
+        return $items;
+    }
+
     private function driverUnavailability(User $user, string $from, string $to): array
     {
-        if (!$user->allows(Permission::DRIVERS_VIEW)) {
+        if (!$user->allows(Permission::DRIVERS_VIEW) && !$user->allows(Permission::VEHICLE_BOOKINGS_VIEW)) {
             return [];
         }
 

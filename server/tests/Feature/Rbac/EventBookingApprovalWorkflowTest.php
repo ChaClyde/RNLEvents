@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Rbac;
 
+use App\EventBookings\EventBookingSlip;
+use App\Models\Event;
 use App\Models\EventBooking;
 use App\Models\EventBookingApproval;
+use App\Models\EventBookingFeeSnapshot;
 use App\Models\Office;
 use App\Models\Role;
 use App\Models\User;
@@ -13,11 +16,15 @@ use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use App\Signatures\SignatureStorage;
+use Tests\Support\ProvidesUserSignature;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class EventBookingApprovalWorkflowTest extends TestCase
 {
+    use ProvidesUserSignature;
     use RefreshDatabase;
 
     private Office $officeA;
@@ -62,6 +69,13 @@ class EventBookingApprovalWorkflowTest extends TestCase
 
         $this->users['faculty-b'] = $this->userFor(Role::FACULTY_STAFF, $this->officeB, 'faculty-b');
         $this->users['dean-b'] = $this->userFor(Role::DEAN_OFFICE_HEAD, $this->officeB, 'dean-b');
+
+        Storage::fake(SignatureStorage::USER_DISK);
+        Storage::fake(SignatureStorage::APPROVAL_DISK);
+
+        foreach ($this->users as $user) {
+            $this->giveSignature($user);
+        }
     }
 
     #[DataProvider('unauthorizedApproversProvider')]
@@ -87,8 +101,8 @@ class EventBookingApprovalWorkflowTest extends TestCase
             'super-admin' => [Role::SUPER_ADMIN],
             'event-admin' => [Role::EVENT_ADMIN],
             'vehicle-admin' => [Role::VEHICLE_ADMIN],
-            'event-approval-admin' => [Role::EVENT_APPROVAL_ADMIN],
-            'vehicle-approval-admin' => [Role::VEHICLE_APPROVAL_ADMIN],
+            'event-approval-admin' => [Role::ADMIN_APPROVALS],
+            'vehicle-approval-admin' => [Role::ADMIN_APPROVALS],
             'faculty-staff' => [Role::FACULTY_STAFF],
             'student-republic' => [Role::STUDENT_REPUBLIC],
         ];
@@ -106,15 +120,11 @@ class EventBookingApprovalWorkflowTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.approval_stage', ApprovalStage::EVENT_APPROVAL);
-
-        $this->asRole(Role::EVENT_APPROVAL_ADMIN)
-            ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
-                'status' => 'approved',
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.status', 'pending')
             ->assertJsonPath('data.approval_stage', ApprovalStage::EVENT_ADMIN);
+
+        $this->assertDatabaseMissing('tbl_events', [
+            'event_booking_id' => $booking->event_booking_id,
+        ]);
 
         $this->asRole(Role::EVENT_ADMIN)
             ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
@@ -122,7 +132,19 @@ class EventBookingApprovalWorkflowTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.approval_stage', ApprovalStage::SUPER_ADMIN);
+            ->assertJsonPath('data.approval_stage', ApprovalStage::EVENT_APPROVAL);
+
+        $this->asRole(Role::ADMIN_APPROVALS)
+            ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
+                'status' => 'approved',
+                'approval_remarks' => 'Calculation confirmed',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.approval_stage', ApprovalStage::SUPER_ADMIN)
+            ->assertJsonPath('data.approvals.2.decision_slot', null)
+            ->assertJsonPath('data.approvals.2.has_signature', true)
+            ->assertJsonMissingPath('data.approvals.2.signature_path');
 
         $this->asRole(Role::SUPER_ADMIN)
             ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
@@ -138,11 +160,15 @@ class EventBookingApprovalWorkflowTest extends TestCase
         $this->assertEquals(
             [
                 ApprovalStage::OFFICE_HEAD,
-                ApprovalStage::EVENT_APPROVAL,
                 ApprovalStage::EVENT_ADMIN,
+                ApprovalStage::EVENT_APPROVAL,
                 ApprovalStage::SUPER_ADMIN,
             ],
             $history->pluck('approval_stage')->all(),
+        );
+        $this->assertSame(
+            [null, null, null, null],
+            $history->pluck('decision_slot')->all(),
         );
         $this->assertTrue($history->every(
             fn (EventBookingApproval $row) => $row->action === EventBookingApproval::ACTION_APPROVED
@@ -151,13 +177,18 @@ class EventBookingApprovalWorkflowTest extends TestCase
             $this->users[Role::SUPER_ADMIN]->user_id,
             $history->last()->approver_user_id,
         );
+        $recorded = Event::query()->where('event_booking_id', $booking->event_booking_id)->first();
+        $this->assertNotNull($recorded);
+        $this->assertSame('approved', $recorded->status);
+        $this->assertSame((int) $booking->requested_by_user_id, (int) $recorded->requested_by_user_id);
+        $this->assertNotNull($recorded->approved_at);
     }
 
     public function test_stage_skipping_and_duplicate_approvals_are_rejected(): void
     {
         $booking = $this->makeBooking($this->users[Role::FACULTY_STAFF]);
 
-        $this->asRole(Role::EVENT_APPROVAL_ADMIN)
+        $this->asRole(Role::ADMIN_APPROVALS)
             ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
                 'status' => 'approved',
             ])
@@ -222,7 +253,7 @@ class EventBookingApprovalWorkflowTest extends TestCase
                 'status' => 'approved',
             ])
             ->assertOk()
-            ->assertJsonPath('data.approval_stage', ApprovalStage::EVENT_APPROVAL);
+            ->assertJsonPath('data.approval_stage', ApprovalStage::EVENT_ADMIN);
     }
 
     public function test_rejection_at_each_stage_records_history_and_stops_the_pipeline(): void
@@ -238,7 +269,7 @@ class EventBookingApprovalWorkflowTest extends TestCase
 
             $actor = match ($stage) {
                 ApprovalStage::OFFICE_HEAD => Role::DEAN_OFFICE_HEAD,
-                ApprovalStage::EVENT_APPROVAL => Role::EVENT_APPROVAL_ADMIN,
+                ApprovalStage::EVENT_APPROVAL => Role::ADMIN_APPROVALS,
                 ApprovalStage::EVENT_ADMIN => Role::EVENT_ADMIN,
                 default => Role::SUPER_ADMIN,
             };
@@ -253,15 +284,33 @@ class EventBookingApprovalWorkflowTest extends TestCase
                 ->assertJsonPath('data.status', 'rejected')
                 ->assertJsonPath('data.approval_stage', $stage);
 
-            $this->asRole(Role::SUPER_ADMIN)
+            $decisions = $booking->fresh()->approvals()->count();
+
+            // The stage owner still matches this stage, so the workflow
+            // itself refuses the rejected booking with 422.
+            $this->asRole($actor)
                 ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
                     'status' => 'approved',
                 ])
                 ->assertStatus(422);
 
+            // A later approver does not own this stage, so permission fails
+            // before the workflow can advance it.
+            if ($stage !== ApprovalStage::SUPER_ADMIN) {
+                $this->asRole(Role::SUPER_ADMIN)
+                    ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
+                        'status' => 'approved',
+                    ])
+                    ->assertForbidden();
+            }
+
+            $booking->refresh();
+            $this->assertSame('rejected', $booking->status);
+            $this->assertSame($stage, $booking->approval_stage);
+            $this->assertSame($decisions, $booking->approvals()->count());
             $this->assertSame(
                 EventBookingApproval::ACTION_REJECTED,
-                $booking->fresh()->approvals->last()->action,
+                $booking->approvals->last()->action,
             );
             $this->assertSame(
                 $this->users[$actor]->user_id,
@@ -297,8 +346,9 @@ class EventBookingApprovalWorkflowTest extends TestCase
             ->postJson('/api/event-bookings/storeEventBooking', [
                 'venue_id' => $this->venue->venue_id,
                 'purpose' => 'Student assembly',
-                'date_start' => now()->toDateString(),
-                'date_end' => now()->toDateString(),
+                'schedule_type' => 'range',
+                'date_start' => now()->addDays(2)->toDateString(),
+                'date_end' => now()->addDays(2)->toDateString(),
                 'time_start' => '16:00',
                 'time_end' => '17:00',
                 'expected_attendees' => 20,
@@ -312,6 +362,7 @@ class EventBookingApprovalWorkflowTest extends TestCase
 
         $this->assertSame('pending', $created['status']);
         $this->assertSame(ApprovalStage::OFFICE_HEAD, $created['approval_stage']);
+        $this->assertTrue($created['has_requester_signature']);
 
         $this->asRole(Role::STUDENT_REPUBLIC)
             ->putJson('/api/event-bookings/updateStatus/' . $created['event_booking_id'], [
@@ -326,8 +377,9 @@ class EventBookingApprovalWorkflowTest extends TestCase
         $payload = [
             'venue_id' => $this->venue->venue_id,
             'purpose' => 'Updated purpose',
-            'date_start' => now()->toDateString(),
-            'date_end' => now()->toDateString(),
+            'schedule_type' => 'range',
+            'date_start' => now()->addDays(2)->toDateString(),
+            'date_end' => now()->addDays(2)->toDateString(),
             'time_start' => '09:00',
             'time_end' => '10:00',
             'expected_attendees' => 12,
@@ -352,12 +404,97 @@ class EventBookingApprovalWorkflowTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_financial_rejection_is_unsigned_and_the_fee_snapshot_stays_unchanged(): void
+    {
+        $booking = $this->makeBooking($this->users[Role::FACULTY_STAFF], '11:00:00', '12:00:00');
+        $snapshot = EventBookingFeeSnapshot::create([
+            'event_booking_id' => $booking->event_booking_id,
+            'pricing_basis' => 'hourly',
+            'venue_amount' => 100,
+            'overtime_amount' => 40,
+            'additional_amount' => 0,
+            'total_amount' => 140,
+            'calculation_note' => 'Reviewed amount',
+            'rate_snapshot' => [],
+            'calculated_at' => now(),
+        ]);
+
+        $this->advanceToStage($booking, ApprovalStage::EVENT_APPROVAL);
+
+        $this->asRole(Role::ADMIN_APPROVALS)
+            ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
+                'status' => 'approved',
+            ])
+            ->assertStatus(422);
+
+        $this->asRole(Role::ADMIN_APPROVALS)
+            ->putJson('/api/event-bookings/' . $booking->event_booking_id . '/fee-calculation', [
+                'confirm' => true,
+                'lines' => [],
+            ])
+            ->assertOk();
+
+        $this->asRole(Role::FACULTY_STAFF)
+            ->putJson('/api/event-bookings/' . $booking->event_booking_id . '/fee-calculation', [
+                'confirm' => true,
+                'lines' => [],
+            ])
+            ->assertForbidden();
+
+        $this->asRole(Role::ADMIN_APPROVALS)
+            ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
+                'status' => 'rejected',
+                'approval_remarks' => 'Overtime hours do not match the schedule',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'rejected')
+            ->assertJsonPath('data.approval_stage', ApprovalStage::EVENT_APPROVAL);
+
+        $decision = $booking->fresh()->approvals->last();
+        $this->assertNull($decision->decision_slot);
+        $this->assertNull($decision->signature_path);
+        $this->assertSame('140.00', $snapshot->fresh()->total_amount);
+        $this->assertNotNull($snapshot->fresh()->calculation_confirmed_at);
+
+        $this->asRole(Role::SUPER_ADMIN)
+            ->putJson('/api/event-bookings/updateStatus/' . $booking->event_booking_id, [
+                'status' => 'approved',
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_a_historical_event_approval_row_still_prints_as_one_signature(): void
+    {
+        $booking = $this->makeBooking($this->users[Role::FACULTY_STAFF], '13:00:00', '14:00:00');
+        $booking->update([
+            'status' => 'approved',
+            'approval_stage' => ApprovalStage::SUPER_ADMIN,
+        ]);
+        EventBookingApproval::create([
+            'event_booking_id' => $booking->event_booking_id,
+            'approver_user_id' => $this->users[Role::ADMIN_APPROVALS]->user_id,
+            'approval_stage' => ApprovalStage::EVENT_APPROVAL,
+            'action' => EventBookingApproval::ACTION_APPROVED,
+            'remarks' => 'Recorded before financial slots',
+            'signer_name' => 'Earlier Approver',
+        ]);
+
+        $html = view('event-bookings.slip', [
+            'slip' => EventBookingSlip::data($booking->fresh()),
+        ])->render();
+
+        $this->assertStringContainsString('Event Approval Admin', $html);
+        $this->assertStringContainsString('Earlier Approver', $html);
+        $this->assertStringNotContainsString('Business Manager', $html);
+        $this->assertStringContainsString('No signature was recorded for this approval.', $html);
+    }
+
     private function advanceToStage(EventBooking $booking, string $target): void
     {
         $sequence = [
             ApprovalStage::OFFICE_HEAD => Role::DEAN_OFFICE_HEAD,
-            ApprovalStage::EVENT_APPROVAL => Role::EVENT_APPROVAL_ADMIN,
             ApprovalStage::EVENT_ADMIN => Role::EVENT_ADMIN,
+            ApprovalStage::EVENT_APPROVAL => Role::ADMIN_APPROVALS,
             ApprovalStage::SUPER_ADMIN => Role::SUPER_ADMIN,
         ];
 

@@ -9,6 +9,7 @@ final class Permission
     public const MODULE_ROLES = 'roles';
     public const MODULE_OFFICES = 'offices';
     public const MODULE_VENUES = 'venues';
+    public const MODULE_VENUE_RATES = 'venue_rates';
     public const MODULE_EVENTS = 'events';
     public const MODULE_VEHICLES = 'vehicles';
     public const MODULE_DRIVERS = 'drivers';
@@ -59,6 +60,11 @@ final class Permission
     public const VENUES_EDIT = 'venues.edit';
     public const VENUES_DELETE = 'venues.delete';
 
+    public const VENUE_RATES_VIEW = 'venue_rates.view';
+    public const VENUE_RATES_CREATE = 'venue_rates.create';
+    public const VENUE_RATES_EDIT = 'venue_rates.edit';
+    public const VENUE_RATES_DELETE = 'venue_rates.delete';
+
     public const EVENTS_VIEW = 'events.view';
     public const EVENTS_CREATE = 'events.create';
     public const EVENTS_EDIT = 'events.edit';
@@ -78,6 +84,7 @@ final class Permission
     public const EVENT_BOOKINGS_CREATE = 'event_bookings.create';
     public const EVENT_BOOKINGS_EDIT = 'event_bookings.edit';
     public const EVENT_BOOKINGS_DELETE = 'event_bookings.delete';
+    public const EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE = 'event_bookings.designate_university_wide';
 
     public const VEHICLE_BOOKINGS_VIEW = 'vehicle_bookings.view';
     public const VEHICLE_BOOKINGS_CREATE = 'vehicle_bookings.create';
@@ -130,6 +137,10 @@ final class Permission
             self::VENUES_CREATE,
             self::VENUES_EDIT,
             self::VENUES_DELETE,
+            self::VENUE_RATES_VIEW,
+            self::VENUE_RATES_CREATE,
+            self::VENUE_RATES_EDIT,
+            self::VENUE_RATES_DELETE,
             self::EVENTS_VIEW,
             self::EVENTS_CREATE,
             self::EVENTS_EDIT,
@@ -146,6 +157,7 @@ final class Permission
             self::EVENT_BOOKINGS_CREATE,
             self::EVENT_BOOKINGS_EDIT,
             self::EVENT_BOOKINGS_DELETE,
+            self::EVENT_BOOKINGS_DESIGNATE_UNIVERSITY_WIDE,
             self::VEHICLE_BOOKINGS_VIEW,
             self::VEHICLE_BOOKINGS_CREATE,
             self::VEHICLE_BOOKINGS_EDIT,

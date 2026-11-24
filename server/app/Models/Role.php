@@ -7,13 +7,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Role extends Model
 {
-    // Fixed slugs of the 8 system roles.
+    // Fixed slugs of the system roles.
     // Use these in middleware and policies instead of hardcoded strings.
     public const SUPER_ADMIN            = 'super-admin';
     public const EVENT_ADMIN            = 'event-admin';
     public const VEHICLE_ADMIN          = 'vehicle-admin';
-    public const EVENT_APPROVAL_ADMIN   = 'event-approval-admin';
-    public const VEHICLE_APPROVAL_ADMIN = 'vehicle-approval-admin';
+    public const ADMIN_APPROVALS        = 'admin-approvals';
+    public const OIC_BUDGET             = 'oic-budget';
     public const DEAN_OFFICE_HEAD       = 'dean-office-head';
     public const FACULTY_STAFF          = 'faculty-staff';
     public const STUDENT_REPUBLIC       = 'student-republic';
@@ -22,8 +22,8 @@ class Role extends Model
         self::SUPER_ADMIN,
         self::EVENT_ADMIN,
         self::VEHICLE_ADMIN,
-        self::EVENT_APPROVAL_ADMIN,
-        self::VEHICLE_APPROVAL_ADMIN,
+        self::ADMIN_APPROVALS,
+        self::OIC_BUDGET,
         self::DEAN_OFFICE_HEAD,
         self::FACULTY_STAFF,
         self::STUDENT_REPUBLIC,

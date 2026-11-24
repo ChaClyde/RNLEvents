@@ -8,15 +8,20 @@ use App\Models\Office;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Venue;
+use App\Permissions\ApprovalStage;
+use App\Signatures\SignatureStorage;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Tests\Support\ProvidesUserSignature;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ApiSecurityHardeningTest extends TestCase
 {
+    use ProvidesUserSignature;
     use RefreshDatabase;
 
     private Office $officeA;
@@ -58,6 +63,11 @@ class ApiSecurityHardeningTest extends TestCase
         foreach (Role::SYSTEM_SLUGS as $slug) {
             $this->users[$slug] = $this->userFor($slug);
         }
+
+        Storage::fake(SignatureStorage::USER_DISK);
+        Storage::fake(SignatureStorage::APPROVAL_DISK);
+        $this->giveSignature($this->users[Role::FACULTY_STAFF]);
+        $this->giveSignature($this->users[Role::STUDENT_REPUBLIC]);
     }
 
     #[DataProvider('eightRolesProvider')]
@@ -81,7 +91,7 @@ class ApiSecurityHardeningTest extends TestCase
             Role::EVENT_ADMIN,
             Role::FACULTY_STAFF,
             Role::STUDENT_REPUBLIC,
-            Role::EVENT_APPROVAL_ADMIN,
+            Role::ADMIN_APPROVALS,
             Role::DEAN_OFFICE_HEAD,
         ], true)) {
             $actor->getJson('/api/event-bookings')->assertForbidden();
@@ -104,8 +114,8 @@ class ApiSecurityHardeningTest extends TestCase
             'super-admin' => [Role::SUPER_ADMIN],
             'event-admin' => [Role::EVENT_ADMIN],
             'vehicle-admin' => [Role::VEHICLE_ADMIN],
-            'event-approval-admin' => [Role::EVENT_APPROVAL_ADMIN],
-            'vehicle-approval-admin' => [Role::VEHICLE_APPROVAL_ADMIN],
+            'event-approval-admin' => [Role::ADMIN_APPROVALS],
+            'vehicle-approval-admin' => [Role::ADMIN_APPROVALS],
             'dean-office-head' => [Role::DEAN_OFFICE_HEAD],
             'faculty-staff' => [Role::FACULTY_STAFF],
             'student-republic' => [Role::STUDENT_REPUBLIC],
@@ -179,6 +189,10 @@ class ApiSecurityHardeningTest extends TestCase
 
         $pending = $this->makeBooking($faculty);
 
+        Storage::fake(SignatureStorage::USER_DISK);
+        Storage::fake(SignatureStorage::APPROVAL_DISK);
+        $this->giveSignature($this->users[Role::DEAN_OFFICE_HEAD]);
+
         $this->asRole(Role::DEAN_OFFICE_HEAD)
             ->putJson('/api/event-bookings/updateStatus/' . $pending->event_booking_id, [
                 'status' => 'approved',
@@ -187,7 +201,7 @@ class ApiSecurityHardeningTest extends TestCase
             ->assertOk();
 
         $this->assertSame('pending', $pending->fresh()->status);
-        $this->assertSame('event_approval', $pending->fresh()->approval_stage);
+        $this->assertSame(ApprovalStage::EVENT_ADMIN, $pending->fresh()->approval_stage);
     }
 
     public function test_emergency_bypass_cannot_be_granted_by_headers_or_parameters_alone(): void
@@ -282,8 +296,9 @@ class ApiSecurityHardeningTest extends TestCase
             ->postJson('/api/event-bookings/storeEventBooking', [
                 'venue_id' => $this->venue->venue_id,
                 'purpose' => 'Spoofed booking',
-                'date_start' => now()->toDateString(),
-                'date_end' => now()->toDateString(),
+                'schedule_type' => 'range',
+                'date_start' => now()->addDays(2)->toDateString(),
+                'date_end' => now()->addDays(2)->toDateString(),
                 'time_start' => '08:00',
                 'time_end' => '09:00',
                 'expected_attendees' => 4,

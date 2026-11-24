@@ -2,16 +2,21 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ScopesQueriesByPermission;
 use App\Http\Controllers\Controller;
 use App\Models\Event;
+use App\Permissions\Permission;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class EventController extends Controller
 {
-    public function loadEvents()
+    use ScopesQueriesByPermission;
+
+    public function loadEvents(Request $request)
     {
-        $events = Event::with(['venue', 'office'])
-            ->where('is_deleted', false)
+        $events = $this->visibleEvents($request)
+            ->with(['venue', 'office', 'letters:attachment_id,event_booking_id,original_filename,mime_type,file_size,attachment_type'])
             ->orderBy('date_start', 'desc')
             ->get();
 
@@ -20,15 +25,27 @@ class EventController extends Controller
         ], 200);
     }
 
-    public function getEvent($event_id)
+    public function getEvent(Request $request, $event_id)
     {
-        $event = Event::with(['venue', 'office'])
-            ->where('is_deleted', false)
-            ->findOrFail($event_id);
+        $event = $this->visibleEvents($request)
+            ->with(['venue', 'office', 'letters:attachment_id,event_booking_id,original_filename,mime_type,file_size,attachment_type'])
+            ->whereKey($event_id)
+            ->firstOrFail();
 
         return response()->json([
             'event' => $event,
         ], 200);
+    }
+
+    private function visibleEvents(Request $request)
+    {
+        return $this->constrainByPermission(
+            Event::query()
+                ->where('is_deleted', false)
+                ->where('status', 'approved'),
+            $request->user(),
+            Permission::EVENTS_VIEW,
+        );
     }
 
     private function rules(): array
@@ -66,12 +83,11 @@ class EventController extends Controller
             'others_quantity.required_with' => 'Please specify quantity for other items.',
         ]);
 
-        $event = Event::create($validated);
+        unset($validated);
 
-        return response()->json([
-            'message' => 'Event created successfully.',
-            'event' => $event->load(['venue', 'office']),
-        ], 201);
+        throw ValidationException::withMessages([
+            'status' => ['An event is added to the event list only after every approver has approved the booking.'],
+        ]);
     }
 
     public function updateEvent(Request $request, Event $event)

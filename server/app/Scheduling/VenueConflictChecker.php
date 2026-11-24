@@ -2,8 +2,10 @@
 
 namespace App\Scheduling;
 
+use App\Models\EventBooking;
 use App\Models\EventBookingSchedule;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class VenueConflictChecker
@@ -84,6 +86,87 @@ class VenueConflictChecker
     | Assert (used inside the store/update/restore/approve transactions)
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * @return Collection<int, EventBooking>
+     */
+    public function find(
+        int $venueId,
+        string $dateStart,
+        string $dateEnd,
+        string $timeStart,
+        string $timeEnd,
+        ?int $excludeBookingId = null,
+    ): Collection {
+        $occurrences = [];
+        $cursor = Carbon::parse($dateStart)->startOfDay();
+        $end = Carbon::parse($dateEnd)->startOfDay();
+
+        while ($cursor->lte($end)) {
+            $occurrences[] = [
+                'date' => $cursor->toDateString(),
+                'time_start' => $timeStart,
+                'time_end' => $timeEnd,
+            ];
+            $cursor->addDay();
+        }
+
+        $ids = [];
+
+        foreach ($this->detect($venueId, $occurrences, $excludeBookingId) as $conflict) {
+            foreach ($conflict['conflicts_with'] as $row) {
+                $ids[] = $row['event_booking_id'];
+            }
+        }
+
+        if ($ids === []) {
+            return new Collection();
+        }
+
+        return EventBooking::query()
+            ->with('office')
+            ->whereIn('event_booking_id', array_unique($ids))
+            ->get();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function detailed(EventBooking $booking): array
+    {
+        return [
+            'type' => 'event_booking',
+            'id' => $booking->event_booking_id,
+            'purpose' => $booking->purpose,
+            'status' => $booking->status,
+            'date_start' => $booking->date_start?->toDateString(),
+            'date_end' => $booking->date_end?->toDateString(),
+            'time_start' => TimeFormat::hm($booking->time_start),
+            'time_end' => TimeFormat::hm($booking->time_end),
+            'requested_by' => $booking->requested_by,
+            'office' => $booking->office?->office_name,
+            'visible' => true,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function sanitized(EventBooking $booking): array
+    {
+        return [
+            'type' => 'event_booking',
+            'id' => null,
+            'purpose' => 'Reserved',
+            'status' => $booking->status,
+            'date_start' => $booking->date_start?->toDateString(),
+            'date_end' => $booking->date_end?->toDateString(),
+            'time_start' => TimeFormat::hm($booking->time_start),
+            'time_end' => TimeFormat::hm($booking->time_end),
+            'requested_by' => null,
+            'visible' => false,
+        ];
+    }
 
     public function assertAvailable(int $venueId, array $occurrences, ?int $excludeBookingId = null): void
     {

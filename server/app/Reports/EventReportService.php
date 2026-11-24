@@ -73,6 +73,7 @@ class EventReportService
         return [
             'most_frequent' => $ranked->take(8)->values()->all(),
             'least_utilized' => $least->take(8)->values()->all(),
+            'ranked' => $ranked->values()->all(),
             'frequency' => $this->chart('Venue Booking Frequency', $ranked->take(12)->values()->all()),
             'distribution' => $this->chart('Venue Reservation Distribution', $ranked->take(12)->values()->all()),
         ];
@@ -96,6 +97,7 @@ class EventReportService
                 SUM(CASE WHEN tbl_event_bookings.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
             ")
             ->groupBy('tbl_event_bookings.office_id', 'tbl_offices.office_name')
+            ->orderByRaw('total DESC')
             ->orderBy('office_name')
             ->get();
 
@@ -162,11 +164,34 @@ class EventReportService
         $offices = $this->offices($user, $filters);
         $rows = $this->allBookingRows($user, $filters);
 
+        $titles = [
+            'daily' => ['Daily Event Report', 'Daily summary of event bookings'],
+            'weekly' => ['Weekly Event Report', 'Weekly summary of event bookings'],
+            'monthly' => ['Monthly Event Report', 'Monthly summary of event bookings'],
+        ];
+        $selected = $titles[$filters['report'] ?? ''] ?? ['FilSched Event Report', 'Event Reports'];
+        $topOffice = $offices[0] ?? null;
+        $topVenue = $venues['most_frequent'][0] ?? null;
+
         return [
             'module' => 'events',
-            'title' => 'FilSched Event Report',
+            'title' => $selected[0],
             'organization' => 'Filamer Christian University Inc.',
-            'report_type' => 'Event Reports',
+            'report_type' => $selected[1],
+            'highlights' => [
+                [
+                    'label' => 'Department with the most events',
+                    'value' => $topOffice
+                        ? $topOffice['office_name'].' ('.$topOffice['total'].')'
+                        : 'None in this period',
+                ],
+                [
+                    'label' => 'Most frequently used venue',
+                    'value' => $topVenue
+                        ? $topVenue['label'].' ('.$topVenue['value'].')'
+                        : 'None in this period',
+                ],
+            ],
             'generated_at' => now()->format('Y-m-d H:i'),
             'date_range' => ReportExportSupport::dateRangeLabel($filters),
             'filters' => $this->describeFilters($user, $filters),
@@ -402,7 +427,14 @@ class EventReportService
 
         $list = $filters['list'] ?? '';
 
+        $reportNames = [
+            'daily' => 'Daily report',
+            'weekly' => 'Weekly report',
+            'monthly' => 'Monthly report',
+        ];
+
         return [
+            ['label' => 'Report', 'value' => $reportNames[$filters['report'] ?? ''] ?? 'Event report'],
             ['label' => 'Date range', 'value' => ReportExportSupport::dateRangeLabel($filters)],
             ['label' => 'Status', 'value' => !empty($filters['status']) ? ucfirst((string) $filters['status']) : 'All statuses'],
             ['label' => 'Office', 'value' => $officeName],
